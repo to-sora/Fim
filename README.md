@@ -78,3 +78,10 @@ Mermaid flowchart:
 source venv/bin/activate
 python -m server.admin_cli graph sha256 <SHA256> --format mermaid
 ```
+
+### Testing
+
+```bash
+source venv/bin/activate
+python -m unittest discover -s tests -v
+```
