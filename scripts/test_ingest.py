@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import math
-import os
+import platform
 import time
 from datetime import date
 from pathlib import Path
@@ -64,7 +64,7 @@ def main() -> int:
     payload = {
         "machine_id": args.machine_id,
         "mac": args.mac,
-        "host_name": args.host_name or os.uname().nodename,
+        "host_name": args.host_name or platform.node() or "unknown",
         "tag": args.tag,
         "records": records,
     }
@@ -79,4 +79,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
