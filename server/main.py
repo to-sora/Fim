@@ -4,16 +4,18 @@ import sqlite3
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 
 from .auth import extract_bearer_token, machine_name_for_token
 from .db import connect, init_db
+from .ingest_buffer import BufferFullError, IngestBuffer
 from .models import IngestRequest
 
 
 app = FastAPI(title="FimSystem", version="0.1.0")
 
 
-def get_db() -> sqlite3.Connection:
+async def get_db() -> sqlite3.Connection:
     conn = connect()
     try:
         yield conn
@@ -22,12 +24,22 @@ def get_db() -> sqlite3.Connection:
 
 
 @app.on_event("startup")
-def _startup() -> None:
+async def _startup() -> None:
     conn = connect()
     try:
         init_db(conn)
     finally:
         conn.close()
+    app.state.ingest_buffer = IngestBuffer()
+    await app.state.ingest_buffer.start()
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    buf = getattr(app.state, "ingest_buffer", None)
+    if buf is not None:
+        await buf.stop()
+        delattr(app.state, "ingest_buffer")
 
 
 def _client_ip(request: Request) -> str:
@@ -73,22 +85,34 @@ def _latest_sha_by_path(
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, str]:
+async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/hello", response_class=PlainTextResponse)
+async def hello() -> str:
+    return "Hello"
+
+
 @app.post("/ingest")
-def ingest(
+async def ingest(
     request: Request,
     payload: IngestRequest,
     authorization: str | None = Header(default=None),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> dict[str, Any]:
+    buf: IngestBuffer | None = getattr(request.app.state, "ingest_buffer", None)
+    if buf is None:
+        raise HTTPException(status_code=503, detail="ingest buffer not initialized")
     machine_name = _require_machine_name(conn, authorization)
     ip = _client_ip(request)
 
     file_paths = [r.file_path for r in payload.records]
-    prev_by_path = _latest_sha_by_path(conn, machine_name=machine_name, file_paths=file_paths)
+    cached_prev_by_path = await buf.cached_latest_sha_by_path(machine_name=machine_name, file_paths=file_paths)
+    missing_paths = [p for p in file_paths if p not in cached_prev_by_path]
+    db_prev_by_path = _latest_sha_by_path(conn, machine_name=machine_name, file_paths=missing_paths)
+    await buf.prime_latest_sha_by_path(machine_name=machine_name, latest_sha_by_path=db_prev_by_path)
+    prev_by_path = {**db_prev_by_path, **cached_prev_by_path}
 
     changed: list[dict[str, str]] = []
     for r in payload.records:
@@ -119,46 +143,76 @@ def ingest(
         )
         for rec in payload.records
     ]
-    conn.executemany(
-        """
-        INSERT INTO file_record(
-          machine_name, machine_id, mac, file_name, file_path, size_bytes, sha256,
-          tag, host_name, client_ip, scan_ts, urn
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        rows,
-    )
-    conn.commit()
+    latest_updates = {rec.file_path: rec.sha256 for rec in payload.records}
+    try:
+        await buf.enqueue(
+            machine_name=machine_name,
+            rows=rows,
+            latest_sha_updates=latest_updates,
+        )
+    except BufferFullError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
     sha_set = sorted({r.sha256 for r in payload.records})
     duplicates: list[dict[str, Any]] = []
     if sha_set:
         placeholders = ",".join(["?"] * len(sha_set))
-        dup_rows = conn.execute(
+        name_set: dict[str, set[str]] = {sha: set() for sha in sha_set}
+        path_set: dict[str, set[str]] = {sha: set() for sha in sha_set}
+        for rec in payload.records:
+            name_set[rec.sha256].add(rec.file_name)
+            path_set[rec.sha256].add(rec.file_path)
+
+        db_rows = conn.execute(
             f"""
-            SELECT sha256,
-                   COUNT(DISTINCT file_name) AS distinct_file_names,
-                   COUNT(DISTINCT file_path) AS distinct_file_paths
+            SELECT sha256, file_name, file_path
             FROM file_record
             WHERE sha256 IN ({placeholders})
-            GROUP BY sha256
-            HAVING COUNT(DISTINCT file_name) > 1 OR COUNT(DISTINCT file_path) > 1
             """,
             sha_set,
         ).fetchall()
-        duplicates = [dict(r) for r in dup_rows]
+        for r in db_rows:
+            sha = str(r["sha256"])
+            if sha not in name_set:
+                continue
+            file_name = r["file_name"]
+            file_path = r["file_path"]
+            if isinstance(file_name, str) and file_name:
+                name_set[sha].add(file_name)
+            if isinstance(file_path, str) and file_path:
+                path_set[sha].add(file_path)
+
+        duplicates = []
+        for sha in sha_set:
+            distinct_file_names = len(name_set[sha])
+            distinct_file_paths = len(path_set[sha])
+            if distinct_file_names > 1 or distinct_file_paths > 1:
+                duplicates.append(
+                    {
+                        "sha256": sha,
+                        "distinct_file_names": distinct_file_names,
+                        "distinct_file_paths": distinct_file_paths,
+                    }
+                )
 
     return {"inserted": len(payload.records), "changed": changed, "duplicates": duplicates}
 
 
 @app.get("/file/{sha256}")
-def file_by_sha256(
+async def file_by_sha256(
     sha256: str,
     limit: int = 100,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> dict[str, Any]:
     if len(sha256) != 64:
         raise HTTPException(status_code=400, detail="sha256 must be 64 hex chars")
+    try:
+        buf = getattr(app.state, "ingest_buffer", None)
+        if buf is not None:
+            await buf.flush()
+    except sqlite3.Error:
+        # Best-effort: fall through and serve whatever is already persisted.
+        pass
     limit = max(1, min(int(limit), 1000))
     rows = conn.execute(
         """
@@ -174,12 +228,18 @@ def file_by_sha256(
 
 
 @app.get("/machine/{machine_name}")
-def machine_records(
+async def machine_records(
     machine_name: str,
     limit: int = 200,
     sha256: str | None = None,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> dict[str, Any]:
+    try:
+        buf = getattr(app.state, "ingest_buffer", None)
+        if buf is not None:
+            await buf.flush()
+    except sqlite3.Error:
+        pass
     limit = max(1, min(int(limit), 5000))
     if sha256 is None:
         rows = conn.execute(
@@ -204,4 +264,3 @@ def machine_records(
             (machine_name, sha256, limit),
         ).fetchall()
     return {"machine_name": machine_name, "records": [dict(r) for r in rows]}
-
