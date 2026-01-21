@@ -1,0 +1,37 @@
+{
+  "machine_name": "MachineNameA",
+  "server_url": "http://127.0.0.1:19991",
+  "auth_token": "PASTE_TOKEN_HERE",
+  "scan_paths": [
+    "."
+  ],
+  "exclude_subdirs": [
+    ".git",
+    "venv",
+    "__pycache__"
+  ],
+  "exclude_extensions": [
+    ".db",
+    ".sqlite",
+    ".log"
+  ],
+  "size_threshold_kb_by_ext": {
+    ".txt": {
+      "lowtherehold": 0,
+      "uppertherehold": 10240000
+    }
+  },
+  "schedule_quota_gb": {
+    "Mon0910": 10,
+    "Mon0932": 10,
+    "Tue0945": 10,
+    "Sun0955": 10,
+    "Fri1910": 10
+  },
+  "state_path": ".fim_state.json",
+  "tag": "default",
+  "follow_symlinks": false,
+  "max_batch_records": 500,
+  "http_timeout_sec": 30.0
+}
+
