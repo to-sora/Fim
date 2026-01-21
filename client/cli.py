@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from .config import load_config
@@ -60,7 +59,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         host = get_host_name()
 
         batch_size = max(1, int(config.max_batch_records))
-        pending_updates: list[str] = []
         for i in range(0, len(records), batch_size):
             batch = records[i : i + batch_size]
             resp = upload_records(
@@ -73,7 +71,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
             _print_ingest_summary(resp)
             today = datetime.now().date().isoformat()
             for r in batch:
-                pending_updates.append(r.file_path)
                 state.files[r.file_path] = today
             save_state(state_path, state)
 
@@ -189,4 +186,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
