@@ -10,7 +10,7 @@ from .config import load_config
 from .enumerator import iter_files
 from .scanner import scan_files
 from .state import SingleInstance, load_state, save_state
-from .uploader import upload_records
+from .uploader import ensure_server_hello, upload_records
 from .utils import get_host_name, get_mac_address, normalize_path
 
 
@@ -49,6 +49,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
     with SingleInstance(lock_path):
+        if not config.server_url:
+            print(json.dumps({"status": "config_error", "error": "server_url is empty in config"}))
+            return 2
+        if not config.auth_token:
+            print(json.dumps({"status": "config_error", "error": "auth_token is empty in config"}))
+            return 2
+        try:
+            ensure_server_hello(config=config)
+        except Exception as e:
+            print(json.dumps({"status": "server_unavailable", "error": str(e)}))
+            return 2
+
         quota_gb = args.quota_gb
         records, scanned_bytes = scan_files(config=config, state=state, quota_gb=quota_gb)
         if not records:
@@ -58,21 +70,28 @@ def _cmd_run(args: argparse.Namespace) -> int:
         mac = get_mac_address()
         host = get_host_name()
 
-        batch_size = max(1, int(config.max_batch_records))
+        batch_size = min(30, max(1, int(config.max_batch_records)))
+        upload_errors: list[str] = []
         for i in range(0, len(records), batch_size):
             batch = records[i : i + batch_size]
-            resp = upload_records(
-                config=config,
-                machine_id=state.machine_id,
-                mac=mac,
-                host_name=host,
-                records=batch,
-            )
-            _print_ingest_summary(resp)
-            today = datetime.now().date().isoformat()
-            for r in batch:
-                state.files[r.file_path] = today
-            save_state(state_path, state)
+            try:
+                resp = upload_records(
+                    config=config,
+                    machine_id=state.machine_id,
+                    mac=mac,
+                    host_name=host,
+                    records=batch,
+                )
+            except Exception as e:
+                upload_errors.append(str(e))
+                print(json.dumps({"status": "upload_error", "batch_index": i, "error": str(e)}))
+                break
+            else:
+                _print_ingest_summary(resp)
+                today = datetime.now().date().isoformat()
+                for r in batch:
+                    state.files[r.file_path] = today
+                save_state(state_path, state)
 
         print(
             json.dumps(
@@ -83,7 +102,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 }
             )
         )
-        return 0
+        return 1 if upload_errors else 0
 
 
 def _now_schedule_key() -> str:
@@ -100,6 +119,12 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
 
     with SingleInstance(lock_path):
+        if not config.server_url:
+            print(json.dumps({"status": "config_error", "error": "server_url is empty in config"}))
+            return 2
+        if not config.auth_token:
+            print(json.dumps({"status": "config_error", "error": "auth_token is empty in config"}))
+            return 2
         print(json.dumps({"status": "daemon_started", "ts": int(time.time())}))
         while True:
             key = _now_schedule_key()
@@ -109,13 +134,14 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                 if state.schedule_last_run.get(key) != today:
                     print(json.dumps({"status": "schedule_trigger", "key": key, "quota_gb": quota}))
                     try:
+                        ensure_server_hello(config=config)
                         records, scanned_bytes = scan_files(
                             config=config, state=state, quota_gb=quota
                         )
                         if records:
                             mac = get_mac_address()
                             host = get_host_name()
-                            batch_size = max(1, int(config.max_batch_records))
+                            batch_size = min(30, max(1, int(config.max_batch_records)))
                             for i in range(0, len(records), batch_size):
                                 batch = records[i : i + batch_size]
                                 resp = upload_records(
@@ -128,6 +154,7 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                                 _print_ingest_summary(resp)
                                 for r in batch:
                                     state.files[r.file_path] = today
+                                save_state(state_path, state)
                             state.schedule_last_run[key] = today
                             save_state(state_path, state)
                             print(

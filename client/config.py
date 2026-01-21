@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -34,8 +35,85 @@ class ClientConfig(BaseModel):
     state_path: str = ".fim_state.json"
     tag: str = ""
     follow_symlinks: bool = False
-    max_batch_records: int = 500
+    max_batch_records: int = 30
     http_timeout_sec: float = 30.0
+    http_retries: int = 5
+
+    @field_validator("machine_name", mode="before")
+    @classmethod
+    def _non_empty_str(cls, value: Any) -> str:
+        if value is None:
+            raise TypeError("machine_name is required")
+        if not isinstance(value, str):
+            raise TypeError("machine_name must be a string")
+        value = value.strip()
+        if not value:
+            raise ValueError("machine_name must not be empty")
+        return value
+
+    @field_validator("server_url", mode="before")
+    @classmethod
+    def _validate_server_url(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise TypeError("server_url must be a string")
+        value = value.strip()
+        if not value:
+            return ""
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("server_url must be a valid http(s) URL")
+        return value
+
+    @field_validator("auth_token", mode="before")
+    @classmethod
+    def _validate_auth_token(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise TypeError("auth_token must be a string")
+        value = value.strip()
+        if value == "PASTE_TOKEN_HERE":
+            return ""
+        return value
+
+    @field_validator("max_batch_records", "http_retries", mode="before")
+    @classmethod
+    def _positive_int(cls, value: Any) -> int:
+        if value is None:
+            raise TypeError("value is required")
+        if isinstance(value, bool):
+            raise TypeError("value must be an integer")
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise TypeError("value must be an integer")
+            value = int(value)
+        if not isinstance(value, int):
+            raise TypeError("value must be an integer")
+        if value < 1:
+            raise ValueError("value must be >= 1")
+        return value
+
+    @field_validator("http_timeout_sec", mode="before")
+    @classmethod
+    def _positive_float(cls, value: Any) -> float:
+        if value is None:
+            raise TypeError("http_timeout_sec is required")
+        if isinstance(value, bool):
+            raise TypeError("http_timeout_sec must be a number")
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise TypeError("http_timeout_sec must be a number")
+            value = float(value)
+        if not isinstance(value, (int, float)):
+            raise TypeError("http_timeout_sec must be a number")
+        value = float(value)
+        if value <= 0:
+            raise ValueError("http_timeout_sec must be > 0")
+        return value
 
     @field_validator("exclude_extensions", mode="before")
     @classmethod
@@ -115,4 +193,3 @@ def load_config(path: str | Path) -> ClientConfig:
     if not isinstance(raw, dict):
         raise TypeError("config JSON must be an object")
     return ClientConfig.model_validate(raw)
-
