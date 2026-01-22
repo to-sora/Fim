@@ -38,6 +38,7 @@ class ClientConfig(BaseModel):
     max_batch_records: int = 30
     http_timeout_sec: float = 30.0
     http_retries: int = 5
+    allow_insecure_ssl: bool = False
 
     @field_validator("machine_name", mode="before")
     @classmethod

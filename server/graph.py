@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Iterable
 
 
@@ -25,13 +25,18 @@ def _base_urn(urn: str) -> str:
     return ":".join(parts[:-1])
 
 
-def _scan_date_from_urn_or_ts(urn: str, scan_ts: int) -> str:
+def _scan_date_from_urn_or_ts(urn: str, scan_ts: str | None) -> str:
     parts = urn.split(":")
     if len(parts) >= 2:
         tail = parts[-1]
         try:
             date.fromisoformat(tail)
             return tail
+        except ValueError:
+            pass
+    if scan_ts:
+        try:
+            return datetime.fromisoformat(scan_ts).date().isoformat()
         except ValueError:
             pass
     # Fallback: unknown scan_date; keep stable ordering
@@ -55,9 +60,9 @@ def fetch_segments_for_sha256(
 
     grouped: dict[tuple[str, str], list[str]] = {}
     for r in rows:
-        machine = str(r["machine_name"])
+        machine = str(r["machine_name"] or "")
         urn = str(r["urn"] or "")
-        scan_ts = int(r["scan_ts"] or 0)
+        scan_ts = str(r["scan_ts"] or "")
         base = _base_urn(urn)
         d = _scan_date_from_urn_or_ts(urn, scan_ts)
         grouped.setdefault((machine, base), []).append(d)

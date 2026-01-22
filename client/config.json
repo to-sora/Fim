@@ -33,5 +33,6 @@
   "follow_symlinks": false,
   "max_batch_records": 30,
   "http_timeout_sec": 30.0,
-  "http_retries": 5
+  "http_retries": 5,
+  "allow_insecure_ssl": false
 }

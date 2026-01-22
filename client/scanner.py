@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import os
-import time
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from .config import ClientConfig
 from .enumerator import FileEntry, iter_files
 from .state import ClientState
-from .utils import ceil_gb, normalize_path
+from .utils import ceil_gb, iso_now
 
 
 @dataclass(frozen=True)
@@ -20,7 +19,7 @@ class ScanRecord:
     extension: str
     size_bytes: int
     sha256: str
-    scan_ts: int
+    scan_ts: str
     urn: str
 
 
@@ -45,21 +44,30 @@ def _is_sha256_hex(value: str) -> bool:
 
 
 def make_urn(machine_name: str, file_name: str, extension: str, size_bytes: int) -> str:
-    scan_date = date.today().isoformat()
+    scan_date = datetime.now(timezone.utc).date().isoformat()
     size_gb = ceil_gb(size_bytes)
     return f"{machine_name}:{file_name}:{extension}:{size_gb}:{scan_date}"
 
 
-def _last_scan_key(state: ClientState, path: str) -> tuple[str, str]:
-    last = state.files.get(path, "")
-    # Empty string sorts first.
-    return (last, path)
+def _bucket_index(last_scan: str) -> int:
+    if not last_scan:
+        return -1
+    try:
+        return date.fromisoformat(last_scan).toordinal() // 15
+    except ValueError:
+        return -1
 
 
 def select_files_for_run(config: ClientConfig, state: ClientState) -> list[FileEntry]:
-    entries = list(iter_files(config))
-    entries.sort(key=lambda e: _last_scan_key(state, normalize_path(e.path)))
-    return entries
+    buckets: dict[int, list[FileEntry]] = {}
+    for entry in iter_files(config):
+        last_scan = state.files.get(entry.path, "")
+        bucket = _bucket_index(last_scan)
+        buckets.setdefault(bucket, []).append(entry)
+    ordered: list[FileEntry] = []
+    for bucket in sorted(buckets.keys()):
+        ordered.extend(buckets[bucket])
+    return ordered
 
 
 def scan_files(
@@ -69,7 +77,7 @@ def scan_files(
     quota_gb: int | None,
     skip_paths: set[str] | None = None,
 ) -> tuple[list[ScanRecord], int]:
-    now_ts = int(time.time())
+    now_ts = iso_now()
     files = select_files_for_run(config, state)
     quota_bytes = None if quota_gb is None else int(quota_gb) * (1024**3)
     skip_paths = skip_paths or set()
@@ -82,7 +90,7 @@ def scan_files(
         if quota_bytes is not None and scanned_count > 0 and scanned_bytes >= quota_bytes:
             break
 
-        file_path = normalize_path(entry.path)
+        file_path = entry.path
         if file_path in skip_paths:
             continue
         file_name = Path(file_path).name
