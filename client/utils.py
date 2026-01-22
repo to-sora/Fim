@@ -17,6 +17,8 @@ def get_host_name() -> str:
 
 def get_mac_address() -> str:
     node = uuid.getnode()
+    if (node >> 40) & 0x01:
+        return "ff:ff:ff:ff:ff:ff"
     mac_hex = f"{node:012x}"
     return ":".join(mac_hex[i : i + 2] for i in range(0, 12, 2))
 
@@ -32,4 +34,3 @@ def is_subpath(path: str, maybe_parent: str) -> bool:
         return os.path.commonpath([path, maybe_parent]) == os.path.normpath(maybe_parent)
     except ValueError:
         return False
-

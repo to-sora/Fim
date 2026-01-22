@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -50,9 +51,7 @@ def iter_files(config: ClientConfig) -> Iterable[FileEntry]:
                 exclude_dir_paths.append(normalize_path(candidate))
             else:
                 exclude_dir_paths.append(normalize_path(os.path.join(root, raw)))
-        for dirpath, dirnames, filenames in os.walk(
-            root, topdown=True, followlinks=config.follow_symlinks
-        ):
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
             dirpath_norm = normalize_path(dirpath)
             if any(is_subpath(dirpath_norm, ex) for ex in exclude_dir_paths):
                 dirnames[:] = []
@@ -64,6 +63,12 @@ def iter_files(config: ClientConfig) -> Iterable[FileEntry]:
                 full = normalize_path(os.path.join(dirpath, d))
                 if any(is_subpath(full, ex) for ex in exclude_dir_paths):
                     continue
+                try:
+                    dir_stat = os.lstat(full)
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISLNK(dir_stat.st_mode):
+                    continue
                 kept_dirs.append(d)
             dirnames[:] = kept_dirs
 
@@ -73,10 +78,16 @@ def iter_files(config: ClientConfig) -> Iterable[FileEntry]:
                 if ext in exclude_exts:
                     continue
                 try:
-                    stat = os.stat(full_path, follow_symlinks=config.follow_symlinks)
+                    file_stat = os.lstat(full_path)
                 except FileNotFoundError:
                     continue
-                size_bytes = int(stat.st_size)
+                if stat.S_ISLNK(file_stat.st_mode):
+                    continue
+                if not stat.S_ISREG(file_stat.st_mode):
+                    continue
+                if file_stat.st_nlink > 1:
+                    continue
+                size_bytes = int(file_stat.st_size)
                 if ext in thresholds:
                     rule = thresholds[ext]
                     size_kb = size_bytes / 1024

@@ -16,10 +16,12 @@ def get_db_path() -> Path:
 def connect() -> sqlite3.Connection:
     db_path = get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    busy_timeout_ms = int(os.environ.get("FIM_DB_BUSY_TIMEOUT_MS", "5000"))
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout = ?;", (busy_timeout_ms,))
     return conn
 
 
@@ -59,4 +61,3 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 def now_ts() -> int:
     return int(time.time())
-
