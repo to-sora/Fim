@@ -10,7 +10,8 @@ Monorepo:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r server/requirements.txt
+pip install -r client/requirements.txt
 ```
 
 ### Server (FastAPI on port `19991`)
