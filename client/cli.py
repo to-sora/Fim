@@ -182,7 +182,7 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimclient")
-    p.add_argument("--config", default="client/.config.json.env", help="Path to client config JSON")
+    p.add_argument("--config", default="client/config.json", help="Path to client config JSON")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     dry = sub.add_parser("dry-run", help="List eligible files and totals (no hashing)")

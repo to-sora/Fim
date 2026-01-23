@@ -56,7 +56,7 @@ Ingest behavior:
 
 ### Client
 
-Edit `client/.config.json.env` and paste your token.
+Edit `client/.config.json.env` and paste your token. Save the file in path client/config.json
 
 Note: scanning + SHA256 hashing can be CPU/disk intensive. For best results, schedule daemon runs during periods when the machine is relatively idle.
 
