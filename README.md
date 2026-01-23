@@ -56,11 +56,11 @@ Ingest behavior:
 
 ### Client
 
-Edit `client/config.json` and paste your token.
+Edit `client/.config.json.env` and paste your token.
 
 Note: scanning + SHA256 hashing can be CPU/disk intensive. For best results, schedule daemon runs during periods when the machine is relatively idle.
 
-If you're connecting through Tailscale, a reverse proxy, or a LAN interface with a mismatched CA/domain, set `allow_insecure_ssl` to `true` in `client/config.json` to skip TLS verification (use only for trusted networks).
+If you're connecting through Tailscale, a reverse proxy, or a LAN interface with a mismatched CA/domain, set `allow_insecure_ssl` to `true` in `client/.config.json.env` to skip TLS verification (use only for trusted networks).
 
 Config highlights:
 
