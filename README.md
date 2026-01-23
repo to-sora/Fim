@@ -3,7 +3,7 @@
 Monorepo:
 
 - `client/` Python client agent (scan + SHA256 + upload)
-- `server/` FastAPI server (append-only SQLite + queries + admin CLI)
+- `server/` FastAPI server (append-only SQLite + admin CLI queries)
 
 ### Setup
 
@@ -22,6 +22,14 @@ source venv/bin/activate
 python -m server.admin_cli token create MachineNameA
 ```
 
+List or delete tokens:
+
+```bash
+source venv/bin/activate
+python -m server.admin_cli token list
+python -m server.admin_cli token delete MachineNameA
+```
+
 Start server:
 
 ```bash
@@ -31,14 +39,19 @@ Start server:
 Environment:
 
 - `FIM_DB_PATH` (optional): SQLite path (default `data/fim.sqlite3`)
-- Timestamps are stored as ISO 8601 text in UTC (format: `YYYY-MM-DDTHH:MM+00:00`).
+- `FIM_DB_BUSY_TIMEOUT_MS` (optional): SQLite busy timeout in ms (default `5000`)
+- Timestamps are stored as ISO 8601 text in UTC with minute precision (format: `YYYY-MM-DDTHH:MM+00:00`).
 
 Endpoints:
 
+- `GET /healthz` (JSON `{"status":"ok"}`)
 - `GET /hello` (plain text `Hello`)
-- `POST /ingest` (Bearer token)
-- `GET /file/{sha256}`
-- `GET /machine/{machine_name}`
+- `POST /ingest` (Bearer token; JSON body with `mac`, `host_name`, optional `tag`, and `records`)
+
+Ingest behavior:
+
+- Records are queued in an in-memory buffer and flushed to SQLite in the background.
+- If the buffer is full, the server returns `503` with `server ingest buffer is full; try again`.
 
 ### Client
 
@@ -48,13 +61,29 @@ Note: scanning + SHA256 hashing can be CPU/disk intensive. For best results, sch
 
 If you're connecting through Tailscale, a reverse proxy, or a LAN interface with a mismatched CA/domain, set `allow_insecure_ssl` to `true` in `client/config.json` to skip TLS verification (use only for trusted networks).
 
+Config highlights:
+
+- `server_url` (required)
+- `auth_token` (required; bearer token from `server.admin_cli`)
+- `scan_paths` list of roots to walk (overlapping subpaths are de-duplicated)
+- `exclude_subdirs` supports directory names or relative/absolute paths
+- `exclude_extensions` uses lowercase extensions (add a leading `.` if omitted)
+- `size_threshold_kb_by_ext` applies per-extension size limits (KB) with optional `lowtherehold`/`uppertherehold`
+- `schedule_quota_gb` uses keys like `Mon0910` (weekday + 24h time)
+- `state_path` stores scan history and scheduler state
+
+Scanner behavior:
+
+- Skips symlinks, hardlinks, and non-regular files.
+- Applies per-extension size thresholds before hashing.
+
 URN structure (added to each record):
 
 ```
 <machine_name>:<file_name>:<extension>:<size_gb>:<scan_date>
 ```
 
-`scan_date` is an ISO 8601 date (`YYYY-MM-DD`). The server uses parameterized SQL queries to guard against SQL injection.
+`scan_date` is an ISO 8601 date (`YYYY-MM-DD`), `extension` is the file suffix without a dot, and `size_gb` is rounded up.
 
 Dry-run (list eligible files and totals):
 
@@ -84,6 +113,19 @@ source venv/bin/activate
 python -m client.cli daemon
 ```
 
+Validate config (prints normalized JSON):
+
+```bash
+source venv/bin/activate
+python -m client.cli validate-config
+```
+
+Shortcut script (`daemon` is default when no args are provided):
+
+```bash
+./start_client.sh
+```
+
 ### Graph (CLI)
 
 ASCII chain:
@@ -100,16 +142,40 @@ source venv/bin/activate
 python -m server.admin_cli graph sha256 <SHA256> --format mermaid
 ```
 
+Graphviz DOT:
+
+```bash
+source venv/bin/activate
+python -m server.admin_cli graph sha256 <SHA256> --format dot
+```
+
+Raw JSON:
+
+```bash
+source venv/bin/activate
+python -m server.admin_cli graph sha256 <SHA256> --format json
+```
+
+### Query (CLI)
+
+Lookup records by SHA256:
+
+```bash
+source venv/bin/activate
+python -m server.admin_cli query file <SHA256>
+```
+
+Query records for a machine (optional SHA256 filter):
+
+```bash
+source venv/bin/activate
+python -m server.admin_cli query machine MachineNameA
+python -m server.admin_cli query machine MachineNameA --sha256 <SHA256>
+```
+
 ### Testing
 
 ```bash
 source venv/bin/activate
 python -m unittest discover -s tests -v
 ```
-
-### Recent changes (2026-01-21)
-
-- Client uploads are capped at 30 records/request, with HTTP retries (default 5) and exponential backoff.
-- Client checks `GET /hello` before starting scans/uploads (fails fast if server unavailable).
-- Client skips files that fail hashing (deleted/edited mid-scan) and does not count them toward quota/state.
-- Server buffers `/ingest` writes in memory and flushes to SQLite in the background (availability > immediate consistency); read endpoints best-effort flush.

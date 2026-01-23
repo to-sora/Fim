@@ -9,12 +9,14 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class SizeThresholdKB(BaseModel):
-    lowtherehold: int = Field(alias="lowtherehold")
-    uppertherehold: int = Field(alias="uppertherehold")
+    lowtherehold: int | None = Field(default=None, alias="lowtherehold")
+    uppertherehold: int | None = Field(default=None, alias="uppertherehold")
 
     @field_validator("lowtherehold", "uppertherehold")
     @classmethod
-    def _non_negative(cls, value: int) -> int:
+    def _non_negative(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
         if value < 0:
             raise ValueError("threshold must be >= 0")
         return value

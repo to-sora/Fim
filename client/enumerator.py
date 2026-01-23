@@ -10,6 +10,24 @@ from .config import ClientConfig
 from .utils import is_subpath, normalize_path
 
 
+def _normalize_scan_roots(scan_paths: list[str]) -> list[str]:
+    roots: list[str] = []
+    seen: set[str] = set()
+    for scan_root in scan_paths:
+        root = normalize_path(scan_root)
+        if root in seen:
+            continue
+        seen.add(root)
+        roots.append(root)
+
+    pruned: list[str] = []
+    for root in sorted(roots, key=lambda p: (p.count(os.sep), p)):
+        if any(is_subpath(root, kept) for kept in pruned):
+            continue
+        pruned.append(root)
+    return pruned
+
+
 @dataclass(frozen=True)
 class FileEntry:
     path: str
@@ -40,8 +58,7 @@ def iter_files(config: ClientConfig) -> Iterable[FileEntry]:
     exclude_exts = set(config.exclude_extensions)
     thresholds = config.size_threshold_kb_by_ext
 
-    for scan_root in config.scan_paths:
-        root = normalize_path(scan_root)
+    for root in _normalize_scan_roots(config.scan_paths):
         if not os.path.exists(root):
             continue
         exclude_dir_paths: list[str] = []
@@ -91,6 +108,8 @@ def iter_files(config: ClientConfig) -> Iterable[FileEntry]:
                 if ext in thresholds:
                     rule = thresholds[ext]
                     size_kb = size_bytes / 1024
-                    if size_kb < rule.lowtherehold or size_kb > rule.uppertherehold:
+                    if rule.lowtherehold is not None and size_kb < rule.lowtherehold:
+                        continue
+                    if rule.uppertherehold is not None and size_kb > rule.uppertherehold:
                         continue
                 yield FileEntry(path=full_path, size_bytes=size_bytes)
