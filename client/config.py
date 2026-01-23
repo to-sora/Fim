@@ -23,7 +23,6 @@ class SizeThresholdKB(BaseModel):
 
 
 class ClientConfig(BaseModel):
-    machine_name: str
     server_url: str = ""
     auth_token: str = ""
 
@@ -41,18 +40,6 @@ class ClientConfig(BaseModel):
     http_timeout_sec: float = 30.0
     http_retries: int = 5
     allow_insecure_ssl: bool = False
-
-    @field_validator("machine_name", mode="before")
-    @classmethod
-    def _non_empty_str(cls, value: Any) -> str:
-        if value is None:
-            raise TypeError("machine_name is required")
-        if not isinstance(value, str):
-            raise TypeError("machine_name must be a string")
-        value = value.strip()
-        if not value:
-            raise ValueError("machine_name must not be empty")
-        return value
 
     @field_validator("server_url", mode="before")
     @classmethod

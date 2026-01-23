@@ -105,7 +105,7 @@ Scanner behavior:
 - Skips symlinks, hardlinks, and non-regular files.
 - Applies per-extension size thresholds before hashing.
 
-URN structure (added to each record):
+URN structure (computed on the server for each record):
 
 ```
 <machine_name>:<file_name>:<extension>:<size_gb>:<scan_date>

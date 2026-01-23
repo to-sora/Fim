@@ -189,8 +189,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             "extension": "txt",
             "size_bytes": 10,
             "sha256": "0" * 64,
-            "scan_ts": 1,
-            "urn": f"{self.machine_name}:a.txt:txt:1:2026-01-21",
+            "scan_ts": "2026-01-21T00:00:00+00:00",
         }
         resp1 = await asgi_request(
             app,
@@ -201,12 +200,11 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp1.status_code, 200, resp1.text)
         body1 = resp1.json()
-        self.assertEqual(body1["inserted"], 1)
-        self.assertEqual(body1["changed"], [])
+        self.assertEqual(body1["received"], 1)
 
         rec2 = dict(rec1)
         rec2["sha256"] = "1" * 64
-        rec2["scan_ts"] = 2
+        rec2["scan_ts"] = "2026-01-21T00:00:10+00:00"
         resp2 = await asgi_request(
             app,
             method="POST",
@@ -216,17 +214,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp2.status_code, 200, resp2.text)
         body2 = resp2.json()
-        self.assertEqual(body2["inserted"], 1)
-        self.assertEqual(
-            body2["changed"],
-            [
-                {
-                    "file_path": "/tmp/a.txt",
-                    "previous_sha256": "0" * 64,
-                    "new_sha256": "1" * 64,
-                }
-            ],
-        )
+        self.assertEqual(body2["received"], 1)
 
     async def test_duplicates_reporting(self) -> None:
         base = {"machine_id": "id1", "mac": "", "host_name": "host1", "tag": "test"}
@@ -238,8 +226,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 "extension": "bin",
                 "size_bytes": 10,
                 "sha256": sha,
-                "scan_ts": 1,
-                "urn": f"{self.machine_name}:a.bin:bin:1:2026-01-21",
+                "scan_ts": "2026-01-21T00:00:00+00:00",
             },
             {
                 "file_path": "/tmp/b.bin",
@@ -247,8 +234,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 "extension": "bin",
                 "size_bytes": 10,
                 "sha256": sha,
-                "scan_ts": 2,
-                "urn": f"{self.machine_name}:b.bin:bin:1:2026-01-21",
+                "scan_ts": "2026-01-21T00:00:10+00:00",
             },
         ]
         resp = await asgi_request(
@@ -260,14 +246,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp.status_code, 200, resp.text)
         body = resp.json()
-        self.assertEqual(body["inserted"], 2)
-        self.assertTrue(body["duplicates"])
-
-        file_resp = await asgi_request(app, method="GET", path=f"/file/{sha}")
-        self.assertEqual(file_resp.status_code, 200, file_resp.text)
-        file_body = file_resp.json()
-        self.assertEqual(file_body["sha256"], sha)
-        self.assertGreaterEqual(len(file_body["records"]), 2)
+        self.assertEqual(body["received"], 2)
 
 
 if __name__ == "__main__":

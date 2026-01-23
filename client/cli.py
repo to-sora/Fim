@@ -22,14 +22,20 @@ def _cmd_dry_run(args: argparse.Namespace) -> int:
         total_files += 1
         total_bytes += entry.size_bytes
         if args.list:
-            print(json.dumps({"path": normalize_path(entry.path), "size_bytes": entry.size_bytes}))
+            payload = {"path": normalize_path(entry.path), "size_bytes": entry.size_bytes}
+            if args.human:
+                payload["size_human"] = format_bytes(entry.size_bytes)
+            print(json.dumps(payload))
+    summary = {
+        "total_files": total_files,
+        "total_bytes": total_bytes,
+        "total_gb": round(total_bytes / (1024**3), 3),
+    }
+    if args.human:
+        summary["total_size"] = format_bytes(total_bytes)
     print(
         json.dumps(
-            {
-                "total_files": total_files,
-                "total_bytes": total_bytes,
-                "total_gb": round(total_bytes / (1024**3), 3),
-            }
+            summary
         )
     )
     return 0
@@ -112,6 +118,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                     "scanned_files": len(records),
                     "scanned_bytes": scanned_bytes,
                     "scanned_gb": round(scanned_bytes / (1024**3), 3),
+                    **({"scanned_size": format_bytes(scanned_bytes)} if args.human else {}),
                 }
             )
         )
@@ -201,6 +208,11 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                                         "key": key,
                                         "scanned_files": len(records),
                                         "scanned_bytes": scanned_bytes,
+                                        **(
+                                            {"scanned_size": format_bytes(scanned_bytes)}
+                                            if args.human
+                                            else {}
+                                        ),
                                     }
                                 )
                             )
@@ -222,6 +234,12 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimclient")
     p.add_argument("--config", default="client/config.json", help="Path to client config JSON")
+    p.add_argument(
+        "-H",
+        "--human",
+        action="store_true",
+        help="Display file sizes in human-readable form",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     dry = sub.add_parser("dry-run", help="List eligible files and totals (no hashing)")

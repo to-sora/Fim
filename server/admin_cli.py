@@ -14,6 +14,28 @@ from .graph import (
 )
 
 
+def _format_bytes(size_bytes: int) -> str:
+    if size_bytes <= 0:
+        return "0 B"
+    size = float(size_bytes)
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    unit_index = 0
+    while size >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+    if size >= 10 or unit_index == 0:
+        return f"{size:.0f} {units[unit_index]}"
+    return f"{size:.1f} {units[unit_index]}"
+
+
+def _attach_human_sizes(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    for record in records:
+        size_value = record.get("size_bytes")
+        if isinstance(size_value, int):
+            record["size_human"] = _format_bytes(size_value)
+    return records
+
+
 def _cmd_token_create(args: argparse.Namespace) -> int:
     conn = connect()
     try:
@@ -81,7 +103,10 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
             """,
             (args.sha256, limit),
         ).fetchall()
-        print(json.dumps({"sha256": args.sha256, "records": [dict(r) for r in rows]}, indent=2))
+        records = [dict(r) for r in rows]
+        if args.human:
+            records = _attach_human_sizes(records)
+        print(json.dumps({"sha256": args.sha256, "records": records}, indent=2))
         return 0
     finally:
         conn.close()
@@ -116,12 +141,10 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                 """,
                 (args.machine_name, args.sha256, limit),
             ).fetchall()
-        print(
-            json.dumps(
-                {"machine_name": args.machine_name, "records": [dict(r) for r in rows]},
-                indent=2,
-            )
-        )
+        records = [dict(r) for r in rows]
+        if args.human:
+            records = _attach_human_sizes(records)
+        print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
         return 0
     finally:
         conn.close()
@@ -129,6 +152,12 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimserver-admin")
+    p.add_argument(
+        "-H",
+        "--human",
+        action="store_true",
+        help="Display file sizes in human-readable form",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     token = sub.add_parser("token", help="Manage machine auth tokens")
