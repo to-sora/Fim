@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import load_config
@@ -11,7 +11,7 @@ from .enumerator import iter_files
 from .scanner import scan_files
 from .state import SingleInstance, load_state, save_state
 from .uploader import ensure_server_hello, upload_records
-from .utils import get_host_name, get_mac_address, normalize_path
+from .utils import get_host_name, get_mac_address, iso_now, normalize_path
 
 
 def _cmd_dry_run(args: argparse.Namespace) -> int:
@@ -77,7 +77,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
             try:
                 resp = upload_records(
                     config=config,
-                    machine_id=state.machine_id,
                     mac=mac,
                     host_name=host,
                     records=batch,
@@ -88,7 +87,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 break
             else:
                 _print_ingest_summary(resp)
-                today = datetime.now().date().isoformat()
+                today = datetime.now(timezone.utc).date().isoformat()
                 for r in batch:
                     state.files[r.file_path] = today
                 save_state(state_path, state)
@@ -125,12 +124,12 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
         if not config.auth_token:
             print(json.dumps({"status": "config_error", "error": "auth_token is empty in config"}))
             return 2
-        print(json.dumps({"status": "daemon_started", "ts": int(time.time())}))
+        print(json.dumps({"status": "daemon_started", "ts": iso_now()}))
         while True:
             key = _now_schedule_key()
             quota = config.schedule_quota_gb.get(key)
             if quota is not None and quota > 0:
-                today = datetime.now().date().isoformat()
+                today = datetime.now(timezone.utc).date().isoformat()
                 if state.schedule_last_run.get(key) != today:
                     print(json.dumps({"status": "schedule_trigger", "key": key, "quota_gb": quota}))
                     try:
@@ -146,7 +145,6 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                                 batch = records[i : i + batch_size]
                                 resp = upload_records(
                                     config=config,
-                                    machine_id=state.machine_id,
                                     mac=mac,
                                     host_name=host,
                                     records=batch,

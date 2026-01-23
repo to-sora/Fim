@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .utils import iso_now
 
 @dataclass
 class ClientState:
@@ -47,7 +47,7 @@ def save_state(path: Path, state: ClientState) -> None:
         "machine_id": state.machine_id,
         "files": state.files,
         "schedule_last_run": state.schedule_last_run,
-        "saved_at_ts": int(time.time()),
+        "saved_at": iso_now(),
     }
     _atomic_write_json(path, payload)
 
@@ -85,4 +85,3 @@ class SingleInstance:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.release()
-

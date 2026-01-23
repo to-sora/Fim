@@ -4,6 +4,7 @@ import math
 import os
 import platform
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -34,3 +35,7 @@ def is_subpath(path: str, maybe_parent: str) -> bool:
         return os.path.commonpath([path, maybe_parent]) == os.path.normpath(maybe_parent)
     except ValueError:
         return False
+
+
+def iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="minutes")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import uuid
 
-from .db import now_ts
+from .db import now_iso_text
 
 
 def extract_bearer_token(authorization: str | None) -> str | None:
@@ -15,16 +15,20 @@ def extract_bearer_token(authorization: str | None) -> str | None:
     return token or None
 
 
-def machine_name_for_token(conn: sqlite3.Connection, token: str) -> str | None:
-    row = conn.execute("SELECT machine_name FROM auth_token WHERE token = ?", (token,)).fetchone()
+def machine_identity_for_token(
+    conn: sqlite3.Connection, token: str
+) -> tuple[int, str | None] | None:
+    row = conn.execute(
+        "SELECT machine_id, machine_name FROM auth_token WHERE token = ?", (token,)
+    ).fetchone()
     if row is None:
         return None
-    return str(row["machine_name"])
+    return int(row["machine_id"]), row["machine_name"]
 
 
 def create_or_rotate_token(conn: sqlite3.Connection, machine_name: str) -> str:
     token = str(uuid.uuid4())
-    ts = now_ts()
+    ts = now_iso_text()
     conn.execute(
         """
         INSERT INTO auth_token(machine_name, token, created_at, updated_at)
@@ -44,6 +48,10 @@ def delete_token(conn: sqlite3.Connection, machine_name: str) -> None:
 
 def list_tokens(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
-        "SELECT machine_name, token, created_at, updated_at FROM auth_token ORDER BY machine_name"
+        """
+        SELECT machine_id, machine_name, token, created_at, updated_at
+        FROM auth_token
+        ORDER BY machine_name
+        """
     ).fetchall()
     return [dict(r) for r in rows]

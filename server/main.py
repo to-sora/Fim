@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from .auth import extract_bearer_token, machine_name_for_token
+from .auth import extract_bearer_token, machine_identity_for_token
 from .db import connect, init_db
 from .ingest_buffer import BufferFullError, IngestBuffer
 from .models import IngestRequest
@@ -51,16 +51,16 @@ def _client_ip(request: Request) -> str:
     return "unknown"
 
 
-def _require_machine_name(
+def _require_machine_identity(
     conn: sqlite3.Connection, authorization: str | None
-) -> str:
+) -> tuple[int, str | None]:
     token = extract_bearer_token(authorization)
     if not token:
         raise HTTPException(status_code=401, detail="missing bearer token")
-    machine_name = machine_name_for_token(conn, token)
-    if not machine_name:
+    identity = machine_identity_for_token(conn, token)
+    if not identity:
         raise HTTPException(status_code=401, detail="invalid token")
-    return machine_name
+    return identity
 
 
 @app.get("/healthz")
@@ -80,13 +80,13 @@ async def ingest(
     authorization: str | None = Header(default=None),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> dict[str, Any]:
-    machine_name = _require_machine_name(conn, authorization)
+    machine_id, machine_name = _require_machine_identity(conn, authorization)
     ip = _client_ip(request)
 
     rows = [
         (
             machine_name,
-            payload.machine_id,
+            machine_id,
             payload.mac,
             rec.file_name,
             rec.file_path,

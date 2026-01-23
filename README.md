@@ -31,6 +31,7 @@ Start server:
 Environment:
 
 - `FIM_DB_PATH` (optional): SQLite path (default `data/fim.sqlite3`)
+- Timestamps are stored as ISO 8601 text in UTC (format: `YYYY-MM-DDTHH:MM+00:00`).
 
 Endpoints:
 
@@ -44,6 +45,16 @@ Endpoints:
 Edit `client/config.json` and paste your token.
 
 Note: scanning + SHA256 hashing can be CPU/disk intensive. For best results, schedule daemon runs during periods when the machine is relatively idle.
+
+If you're connecting through Tailscale, a reverse proxy, or a LAN interface with a mismatched CA/domain, set `allow_insecure_ssl` to `true` in `client/config.json` to skip TLS verification (use only for trusted networks).
+
+URN structure (added to each record):
+
+```
+<machine_name>:<file_name>:<extension>:<size_gb>:<scan_date>
+```
+
+`scan_date` is an ISO 8601 date (`YYYY-MM-DD`). The server uses parameterized SQL queries to guard against SQL injection.
 
 Dry-run (list eligible files and totals):
 

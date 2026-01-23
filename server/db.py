@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -29,16 +29,17 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS auth_token (
-          machine_name TEXT PRIMARY KEY,
+          machine_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          machine_name TEXT UNIQUE,
           token TEXT NOT NULL UNIQUE,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS file_record (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          machine_name TEXT NOT NULL,
-          machine_id TEXT,
+          machine_name TEXT,
+          machine_id INTEGER,
           mac TEXT,
           file_name TEXT,
           file_path TEXT,
@@ -47,7 +48,7 @@ def init_db(conn: sqlite3.Connection) -> None:
           tag TEXT,
           host_name TEXT,
           client_ip TEXT,
-          scan_ts INTEGER,
+          scan_ts TEXT,
           urn TEXT
         );
 
@@ -59,5 +60,5 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def now_ts() -> int:
-    return int(time.time())
+def now_iso_text() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="minutes")
