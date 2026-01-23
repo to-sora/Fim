@@ -5,6 +5,7 @@ import sqlite3
 from typing import Any
 
 from .db import connect
+from .logger import get_logger
 
 
 INSERT_SQL = """
@@ -32,7 +33,6 @@ class IngestBuffer:
         self._max_pending_rows = int(max_pending_rows)
 
         self._pending_rows: list[tuple[Any, ...]] = []
-        self._latest_sha_by_machine_path: dict[tuple[str, str], str] = {}
 
         self._lock = asyncio.Lock()
         self._wakeup = asyncio.Event()
@@ -57,32 +57,11 @@ class IngestBuffer:
         async with self._lock:
             return len(self._pending_rows)
 
-    async def cached_latest_sha_by_path(
-        self, *, machine_name: str, file_paths: list[str]
-    ) -> dict[str, str]:
-        async with self._lock:
-            out: dict[str, str] = {}
-            for p in file_paths:
-                v = self._latest_sha_by_machine_path.get((machine_name, p))
-                if v is not None:
-                    out[p] = v
-            return out
-
-    async def prime_latest_sha_by_path(
-        self, *, machine_name: str, latest_sha_by_path: dict[str, str]
-    ) -> None:
-        if not latest_sha_by_path:
-            return
-        async with self._lock:
-            for p, sha in latest_sha_by_path.items():
-                self._latest_sha_by_machine_path.setdefault((machine_name, p), sha)
-
     async def enqueue(
         self,
         *,
         machine_name: str,
         rows: list[tuple[Any, ...]],
-        latest_sha_updates: dict[str, str],
     ) -> None:
         if not rows:
             return
@@ -90,8 +69,6 @@ class IngestBuffer:
             if len(self._pending_rows) + len(rows) > self._max_pending_rows:
                 raise BufferFullError("server ingest buffer is full; try again")
             self._pending_rows.extend(rows)
-            for p, sha in latest_sha_updates.items():
-                self._latest_sha_by_machine_path[(machine_name, p)] = sha
         self._wakeup.set()
 
     async def flush(self, *, max_rows: int | None = None) -> int:
@@ -114,6 +91,7 @@ class IngestBuffer:
             finally:
                 conn.close()
         except sqlite3.Error:
+            get_logger().exception("db flush failed; preserving buffered rows")
             async with self._lock:
                 # Prepend so order is preserved as best as possible.
                 self._pending_rows = batch + self._pending_rows
@@ -136,6 +114,7 @@ class IngestBuffer:
                         break
             except sqlite3.Error:
                 # Best-effort buffering: keep data in memory and retry later.
+                get_logger().warning("db flush failed; retrying after backoff")
                 await asyncio.sleep(min(self._flush_interval_sec, 2.0))
 
             if self._stop_requested.is_set():
@@ -146,6 +125,6 @@ class IngestBuffer:
                             break
                 except sqlite3.Error:
                     # Give up on shutdown flush if DB is unavailable.
+                    get_logger().warning("db flush failed during shutdown; data may be lost")
                     pass
                 return
-
