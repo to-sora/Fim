@@ -77,6 +77,17 @@ Scanner behavior:
 - Skips symlinks, hardlinks, and non-regular files.
 - Applies per-extension size thresholds before hashing.
 
+Example threshold config (lower-only / upper-only):
+
+```json
+{
+  "size_threshold_kb_by_ext": {
+    ".log": {"uppertherehold": 1024},
+    ".bin": {"lowtherehold": 512}
+  }
+}
+```
+
 URN structure (added to each record):
 
 ```
