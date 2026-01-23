@@ -33,7 +33,6 @@ class ClientConfig(BaseModel):
 
     schedule_quota_gb: dict[str, int] = Field(default_factory=dict)
 
-    state_path: str = ".fim_state.json"
     tag: str = ""
     follow_symlinks: bool = False
     max_batch_records: int = 30
@@ -172,10 +171,6 @@ class ClientConfig(BaseModel):
                 raise ValueError("schedule quota must be >= 0")
             out[k] = v
         return out
-
-    def state_file(self) -> Path:
-        return Path(self.state_path)
-
 
 def load_config(path: str | Path) -> ClientConfig:
     config_path = Path(path)

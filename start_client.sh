@@ -12,7 +12,8 @@ source venv/bin/activate
 python -m pip install -r client/requirements.txt >/dev/null
 
 if [[ $# -eq 0 ]]; then
-  exec python -m client.cli daemon
+  echo "usage: $0 <client.cli args> (include --state-path and --log-path for run/daemon)" >&2
+  exit 1
 fi
 
 exec python -m client.cli "$@"

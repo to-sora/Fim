@@ -50,9 +50,9 @@ def _print_ingest_summary(resp: dict) -> None:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    state_path = Path(config.state_path)
+    state_path = Path(args.state_path)
     state = load_state(state_path)
-    logger = setup_logger(state_path.with_suffix(".log"))
+    logger = setup_logger(Path(args.log_path))
 
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
     with SingleInstance(lock_path):
@@ -134,10 +134,10 @@ def _now_schedule_key() -> str:
 
 def _cmd_daemon(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    state_path = Path(config.state_path)
+    state_path = Path(args.state_path)
     state = load_state(state_path)
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
-    logger = setup_logger(state_path.with_suffix(".log"))
+    logger = setup_logger(Path(args.log_path))
 
     with SingleInstance(lock_path):
         if not config.server_url:
@@ -247,10 +247,14 @@ def build_parser() -> argparse.ArgumentParser:
     dry.set_defaults(func=_cmd_dry_run)
 
     run = sub.add_parser("run", help="Scan files and upload to server once")
+    run.add_argument("--state-path", required=True, help="Path to state JSON file")
+    run.add_argument("--log-path", required=True, help="Path to log file")
     run.add_argument("--quota-gb", type=int, default=None, help="Max GB per run (can exceed by 1 file)")
     run.set_defaults(func=_cmd_run)
 
     daemon = sub.add_parser("daemon", help="Run scheduler loop from config.schedule_quota_gb")
+    daemon.add_argument("--state-path", required=True, help="Path to state JSON file")
+    daemon.add_argument("--log-path", required=True, help="Path to log file")
     daemon.add_argument("--poll-sec", type=float, default=20.0, help="Polling interval seconds")
     daemon.set_defaults(func=_cmd_daemon)
 
