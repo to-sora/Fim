@@ -11,7 +11,7 @@ from .enumerator import iter_files
 from .scanner import scan_files
 from .state import SingleInstance, load_state, save_state
 from .uploader import ensure_server_hello, upload_records
-from .utils import get_host_name, get_mac_address, iso_now, normalize_path
+from .utils import format_bytes, get_host_name, get_mac_address, iso_now, normalize_path, setup_logger
 
 
 def _cmd_dry_run(args: argparse.Namespace) -> int:
@@ -46,6 +46,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     state_path = Path(config.state_path)
     state = load_state(state_path)
+    logger = setup_logger(state_path.with_suffix(".log"))
 
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
     with SingleInstance(lock_path):
@@ -62,6 +63,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             return 2
 
         quota_gb = args.quota_gb
+        logger.info(json.dumps({"event": "scan_start", "quota_gb": quota_gb, "ts": iso_now()}))
         records, scanned_bytes = scan_files(config=config, state=state, quota_gb=quota_gb)
         if not records:
             print(json.dumps({"scanned_files": 0, "scanned_bytes": 0}))
@@ -71,6 +73,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         host = get_host_name()
 
         batch_size = min(30, max(1, int(config.max_batch_records)))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "upload_request",
+                    "record_count": len(records),
+                    "batch_size": batch_size,
+                    "scanned_bytes": scanned_bytes,
+                    "scanned_size": format_bytes(scanned_bytes),
+                    "ts": iso_now(),
+                }
+            )
+        )
         upload_errors: list[str] = []
         for i in range(0, len(records), batch_size):
             batch = records[i : i + batch_size]
@@ -116,6 +130,7 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
     state_path = Path(config.state_path)
     state = load_state(state_path)
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
+    logger = setup_logger(state_path.with_suffix(".log"))
 
     with SingleInstance(lock_path):
         if not config.server_url:
@@ -124,6 +139,7 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
         if not config.auth_token:
             print(json.dumps({"status": "config_error", "error": "auth_token is empty in config"}))
             return 2
+        logger.info(json.dumps({"event": "scheduler_start", "ts": iso_now()}))
         print(json.dumps({"status": "daemon_started", "ts": iso_now()}))
         while True:
             key = _now_schedule_key()
@@ -134,6 +150,16 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                     print(json.dumps({"status": "schedule_trigger", "key": key, "quota_gb": quota}))
                     try:
                         ensure_server_hello(config=config)
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "event": "schedule_scan_start",
+                                    "key": key,
+                                    "quota_gb": quota,
+                                    "ts": iso_now(),
+                                }
+                            )
+                        )
                         records, scanned_bytes = scan_files(
                             config=config, state=state, quota_gb=quota
                         )
@@ -141,6 +167,19 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                             mac = get_mac_address()
                             host = get_host_name()
                             batch_size = min(30, max(1, int(config.max_batch_records)))
+                            logger.info(
+                                json.dumps(
+                                    {
+                                        "event": "schedule_upload_request",
+                                        "key": key,
+                                        "record_count": len(records),
+                                        "batch_size": batch_size,
+                                        "scanned_bytes": scanned_bytes,
+                                        "scanned_size": format_bytes(scanned_bytes),
+                                        "ts": iso_now(),
+                                    }
+                                )
+                            )
                             for i in range(0, len(records), batch_size):
                                 batch = records[i : i + batch_size]
                                 resp = upload_records(
