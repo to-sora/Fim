@@ -146,20 +146,14 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
             records = _attach_human_sizes(records)
 
         if getattr(args, "table", False):
-            for r in records:
-                r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             cols = [
                 ("machine_name", "MACHINE"),
                 ("file_name", "FILE"),
-                ("file_path", "PATH"),
                 ("size_display", "SIZE"),
-                ("sha256", "SHA256"),
-                ("tag", "TAG"),
-                ("host_name", "HOST"),
-                ("client_ip", "IP"),
-                ("scan_ts", "SCAN_TS"),
-                ("urn", "URN"),
             ]
+            for r in records:
+                
+                r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             _print_table(records, cols)
         else:
             print(json.dumps({"sha256": args.sha256, "records": records}, indent=2))
@@ -206,15 +200,9 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
             for r in records:
                 r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             cols = [
+                ("machine_name", "MACHINE"),
                 ("file_name", "FILE"),
-                ("file_path", "PATH"),
                 ("size_display", "SIZE"),
-                ("sha256", "SHA256"),
-                ("tag", "TAG"),
-                ("host_name", "HOST"),
-                ("client_ip", "IP"),
-                ("scan_ts", "SCAN_TS"),
-                ("urn", "URN"),
             ]
             _print_table(records, cols)
         else:
