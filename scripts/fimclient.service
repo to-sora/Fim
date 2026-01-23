@@ -1,0 +1,14 @@
+[Unit]
+Description=Fim client scheduler
+After=network.target
+
+[Service]
+Type=simple
+User=fim
+WorkingDirectory=/opt/fim
+ExecStart=/opt/fim/start_client.sh daemon --config /opt/fim/client/config.json --state-path /var/lib/fim/state.json --log-path /var/log/fim/client.log --poll-sec 20
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -141,6 +141,19 @@ source venv/bin/activate
 python -m client.cli daemon --state-path .fim_state.json --log-path .fim.log
 ```
 
+Systemd examples:
+
+- Server unit: `scripts/fimserver.service`
+- Client unit: `scripts/fimclient.service`
+
+Copy the unit files to `/etc/systemd/system/`, adjust paths/users, then run:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now fimserver.service
+sudo systemctl enable --now fimclient.service
+```
+
 Validate config (prints normalized JSON):
 
 ```bash
