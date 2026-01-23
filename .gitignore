@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 .Python
 .env
+.config.json
 .fim_state.json
 .fim_state.json.lock
 .fim_state.json.tmp

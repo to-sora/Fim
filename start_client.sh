@@ -9,7 +9,7 @@ if [[ ! -d venv ]]; then
 fi
 
 source venv/bin/activate
-python -m pip install -r requirements.txt >/dev/null
+python -m pip install -r client/requirements.txt >/dev/null
 
 if [[ $# -eq 0 ]]; then
   exec python -m client.cli daemon

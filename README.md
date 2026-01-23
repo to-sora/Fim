@@ -10,7 +10,8 @@ Monorepo:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r server/requirements.txt
+pip install -r client/requirements.txt
 ```
 
 ### Server (FastAPI on port `19991`)
@@ -55,11 +56,38 @@ Ingest behavior:
 
 ### Client
 
-Edit `client/config.json` and paste your token.
+Edit `client/.config.json.env` and paste your token.
 
 Note: scanning + SHA256 hashing can be CPU/disk intensive. For best results, schedule daemon runs during periods when the machine is relatively idle.
 
-If you're connecting through Tailscale, a reverse proxy, or a LAN interface with a mismatched CA/domain, set `allow_insecure_ssl` to `true` in `client/config.json` to skip TLS verification (use only for trusted networks).
+If you're connecting through Tailscale, a reverse proxy, or a LAN interface with a mismatched CA/domain, set `allow_insecure_ssl` to `true` in `client/.config.json.env` to skip TLS verification (use only for trusted networks).
+
+Config highlights:
+
+- `server_url` (required)
+- `auth_token` (required; bearer token from `server.admin_cli`)
+- `scan_paths` list of roots to walk (overlapping subpaths are de-duplicated)
+- `exclude_subdirs` supports directory names or relative/absolute paths
+- `exclude_extensions` uses lowercase extensions (add a leading `.` if omitted)
+- `size_threshold_kb_by_ext` applies per-extension size limits (KB) with optional `lowtherehold`/`uppertherehold`
+- `schedule_quota_gb` uses keys like `Mon0910` (weekday + 24h time)
+- `state_path` stores scan history and scheduler state
+
+Scanner behavior:
+
+- Skips symlinks, hardlinks, and non-regular files.
+- Applies per-extension size thresholds before hashing.
+
+Example threshold config (lower-only / upper-only):
+
+```json
+{
+  "size_threshold_kb_by_ext": {
+    ".log": {"uppertherehold": 1024},
+    ".bin": {"lowtherehold": 512}
+  }
+}
+```
 
 Config highlights:
 
