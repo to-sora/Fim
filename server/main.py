@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
+from math import ceil
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -61,6 +63,20 @@ def _require_machine_identity(
     return identity
 
 
+def _ceil_gb(size_bytes: int) -> int:
+    if size_bytes <= 0:
+        return 0
+    return int(ceil(size_bytes / (1024**3)))
+
+
+def _make_urn(
+    *, machine_name: str, file_name: str, extension: str, size_bytes: int, scan_ts: str
+) -> str:
+    scan_date = datetime.fromisoformat(scan_ts).date().isoformat()
+    size_gb = _ceil_gb(size_bytes)
+    return f"{machine_name}:{file_name}:{extension}:{size_gb}:{scan_date}"
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -94,7 +110,13 @@ async def ingest(
             payload.host_name,
             ip,
             rec.scan_ts,
-            rec.urn,
+            _make_urn(
+                machine_name=machine_name,
+                file_name=rec.file_name,
+                extension=rec.extension,
+                size_bytes=rec.size_bytes,
+                scan_ts=rec.scan_ts,
+            ),
         )
         for rec in payload.records
     ]

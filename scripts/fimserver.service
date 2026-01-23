@@ -1,0 +1,15 @@
+[Unit]
+Description=Fim server
+After=network.target
+
+[Service]
+Type=simple
+User=fim
+WorkingDirectory=/opt/fim
+Environment=FIM_DB_PATH=/opt/fim/data/fim.sqlite3
+ExecStart=/opt/fim/start_server.sh
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

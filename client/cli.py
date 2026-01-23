@@ -22,14 +22,20 @@ def _cmd_dry_run(args: argparse.Namespace) -> int:
         total_files += 1
         total_bytes += entry.size_bytes
         if args.list:
-            print(json.dumps({"path": normalize_path(entry.path), "size_bytes": entry.size_bytes}))
+            payload = {"path": normalize_path(entry.path), "size_bytes": entry.size_bytes}
+            if args.human:
+                payload["size_human"] = format_bytes(entry.size_bytes)
+            print(json.dumps(payload))
+    summary = {
+        "total_files": total_files,
+        "total_bytes": total_bytes,
+        "total_gb": round(total_bytes / (1024**3), 3),
+    }
+    if args.human:
+        summary["total_size"] = format_bytes(total_bytes)
     print(
         json.dumps(
-            {
-                "total_files": total_files,
-                "total_bytes": total_bytes,
-                "total_gb": round(total_bytes / (1024**3), 3),
-            }
+            summary
         )
     )
     return 0
@@ -44,9 +50,9 @@ def _print_ingest_summary(resp: dict) -> None:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    state_path = Path(config.state_path)
+    state_path = Path(args.state_path)
     state = load_state(state_path)
-    logger = setup_logger(state_path.with_suffix(".log"))
+    logger = setup_logger(Path(args.log_path))
 
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
     with SingleInstance(lock_path):
@@ -112,6 +118,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                     "scanned_files": len(records),
                     "scanned_bytes": scanned_bytes,
                     "scanned_gb": round(scanned_bytes / (1024**3), 3),
+                    **({"scanned_size": format_bytes(scanned_bytes)} if args.human else {}),
                 }
             )
         )
@@ -127,10 +134,10 @@ def _now_schedule_key() -> str:
 
 def _cmd_daemon(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    state_path = Path(config.state_path)
+    state_path = Path(args.state_path)
     state = load_state(state_path)
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
-    logger = setup_logger(state_path.with_suffix(".log"))
+    logger = setup_logger(Path(args.log_path))
 
     with SingleInstance(lock_path):
         if not config.server_url:
@@ -201,6 +208,11 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                                         "key": key,
                                         "scanned_files": len(records),
                                         "scanned_bytes": scanned_bytes,
+                                        **(
+                                            {"scanned_size": format_bytes(scanned_bytes)}
+                                            if args.human
+                                            else {}
+                                        ),
                                     }
                                 )
                             )
@@ -222,6 +234,12 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimclient")
     p.add_argument("--config", default="client/config.json", help="Path to client config JSON")
+    p.add_argument(
+        "-H",
+        "--human",
+        action="store_true",
+        help="Display file sizes in human-readable form",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     dry = sub.add_parser("dry-run", help="List eligible files and totals (no hashing)")
@@ -229,10 +247,14 @@ def build_parser() -> argparse.ArgumentParser:
     dry.set_defaults(func=_cmd_dry_run)
 
     run = sub.add_parser("run", help="Scan files and upload to server once")
+    run.add_argument("--state-path", required=True, help="Path to state JSON file")
+    run.add_argument("--log-path", required=True, help="Path to log file")
     run.add_argument("--quota-gb", type=int, default=None, help="Max GB per run (can exceed by 1 file)")
     run.set_defaults(func=_cmd_run)
 
     daemon = sub.add_parser("daemon", help="Run scheduler loop from config.schedule_quota_gb")
+    daemon.add_argument("--state-path", required=True, help="Path to state JSON file")
+    daemon.add_argument("--log-path", required=True, help="Path to log file")
     daemon.add_argument("--poll-sec", type=float, default=20.0, help="Polling interval seconds")
     daemon.set_defaults(func=_cmd_daemon)
 

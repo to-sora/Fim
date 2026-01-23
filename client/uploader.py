@@ -71,8 +71,6 @@ def _validate_records(records: list[ScanRecord]) -> None:
         sha = r.sha256.lower()
         if any(ch not in "0123456789abcdef" for ch in sha):
             raise ValueError("record.sha256 must be hex")
-        if not r.urn:
-            raise ValueError("record.urn is empty")
 
 
 def upload_records(

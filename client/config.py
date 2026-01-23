@@ -23,7 +23,6 @@ class SizeThresholdKB(BaseModel):
 
 
 class ClientConfig(BaseModel):
-    machine_name: str
     server_url: str = ""
     auth_token: str = ""
 
@@ -34,25 +33,12 @@ class ClientConfig(BaseModel):
 
     schedule_quota_gb: dict[str, int] = Field(default_factory=dict)
 
-    state_path: str = ".fim_state.json"
     tag: str = ""
     follow_symlinks: bool = False
     max_batch_records: int = 30
     http_timeout_sec: float = 30.0
     http_retries: int = 5
     allow_insecure_ssl: bool = False
-
-    @field_validator("machine_name", mode="before")
-    @classmethod
-    def _non_empty_str(cls, value: Any) -> str:
-        if value is None:
-            raise TypeError("machine_name is required")
-        if not isinstance(value, str):
-            raise TypeError("machine_name must be a string")
-        value = value.strip()
-        if not value:
-            raise ValueError("machine_name must not be empty")
-        return value
 
     @field_validator("server_url", mode="before")
     @classmethod
@@ -185,10 +171,6 @@ class ClientConfig(BaseModel):
                 raise ValueError("schedule quota must be >= 0")
             out[k] = v
         return out
-
-    def state_file(self) -> Path:
-        return Path(self.state_path)
-
 
 def load_config(path: str | Path) -> ClientConfig:
     config_path = Path(path)

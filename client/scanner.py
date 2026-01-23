@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
 from .config import ClientConfig
 from .enumerator import FileEntry, iter_files
 from .state import ClientState
-from .utils import ceil_gb, iso_now
+from .utils import iso_now
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,6 @@ class ScanRecord:
     size_bytes: int
     sha256: str
     scan_ts: str
-    urn: str
 
 
 def sha256_file(path: str, chunk_size: int = 4 * 1024 * 1024) -> str:
@@ -41,12 +40,6 @@ def _is_sha256_hex(value: str) -> bool:
         if ch not in "0123456789abcdef":
             return False
     return True
-
-
-def make_urn(machine_name: str, file_name: str, extension: str, size_bytes: int) -> str:
-    scan_date = datetime.now(timezone.utc).date().isoformat()
-    size_gb = ceil_gb(size_bytes)
-    return f"{machine_name}:{file_name}:{extension}:{size_gb}:{scan_date}"
 
 
 def _bucket_index(last_scan: str) -> int:
@@ -108,7 +101,6 @@ def scan_files(
             continue
         if not _is_sha256_hex(digest):
             continue
-        urn = make_urn(config.machine_name, file_name, ext, entry.size_bytes)
         out.append(
             ScanRecord(
                 file_path=file_path,
@@ -117,7 +109,6 @@ def scan_files(
                 size_bytes=entry.size_bytes,
                 sha256=digest,
                 scan_ts=now_ts,
-                urn=urn,
             )
         )
         scanned_bytes += entry.size_bytes

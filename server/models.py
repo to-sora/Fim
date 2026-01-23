@@ -12,7 +12,7 @@ class RecordIn(BaseModel):
     size_bytes: int
     sha256: str = Field(min_length=64, max_length=64)
     scan_ts: str
-    urn: str
+    urn: str | None = None
 
     @field_validator("size_bytes")
     @classmethod

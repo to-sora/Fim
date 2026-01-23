@@ -71,7 +71,7 @@ Config highlights:
 - `exclude_extensions` uses lowercase extensions (add a leading `.` if omitted)
 - `size_threshold_kb_by_ext` applies per-extension size limits (KB) with optional `lowtherehold`/`uppertherehold`
 - `schedule_quota_gb` uses keys like `Mon0910` (weekday + 24h time)
-- `state_path` stores scan history and scheduler state
+- `state_path` stores scan history and scheduler state (provided via `--state-path`)
 
 Scanner behavior:
 
@@ -98,14 +98,14 @@ Config highlights:
 - `exclude_extensions` uses lowercase extensions (add a leading `.` if omitted)
 - `size_threshold_kb_by_ext` applies per-extension size limits (KB) with `lowtherehold`/`uppertherehold`
 - `schedule_quota_gb` uses keys like `Mon0910` (weekday + 24h time)
-- `state_path` stores scan history and scheduler state
+- `state_path` stores scan history and scheduler state (provided via `--state-path`)
 
 Scanner behavior:
 
 - Skips symlinks, hardlinks, and non-regular files.
 - Applies per-extension size thresholds before hashing.
 
-URN structure (added to each record):
+URN structure (computed on the server for each record):
 
 ```
 <machine_name>:<file_name>:<extension>:<size_gb>:<scan_date>
@@ -124,21 +124,34 @@ Run once (quota in GB; may exceed by 1 file):
 
 ```bash
 source venv/bin/activate
-python -m client.cli run --quota-gb 10
+python -m client.cli run --state-path .fim_state.json --log-path .fim.log --quota-gb 10
 ```
 
 First-time/full run (no quota limit):
 
 ```bash
 source venv/bin/activate
-python -m client.cli run
+python -m client.cli run --state-path .fim_state.json --log-path .fim.log
 ```
 
 Daemon scheduler (uses `schedule_quota_gb` in config):
 
 ```bash
 source venv/bin/activate
-python -m client.cli daemon
+python -m client.cli daemon --state-path .fim_state.json --log-path .fim.log
+```
+
+Systemd examples:
+
+- Server unit: `scripts/fimserver.service`
+- Client unit: `scripts/fimclient.service`
+
+Copy the unit files to `/etc/systemd/system/`, adjust paths/users, then run:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now fimserver.service
+sudo systemctl enable --now fimclient.service
 ```
 
 Validate config (prints normalized JSON):
