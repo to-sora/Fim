@@ -9,6 +9,7 @@ from fastapi.responses import PlainTextResponse
 from .auth import extract_bearer_token, machine_identity_for_token
 from .db import connect, init_db
 from .ingest_buffer import BufferFullError, IngestBuffer
+from .logger import get_logger
 from .models import IngestRequest
 
 
@@ -43,9 +44,6 @@ async def _shutdown() -> None:
 
 
 def _client_ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
     if request.client:
         return request.client.host
     return "unknown"
@@ -102,82 +100,15 @@ async def ingest(
     ]
     buf = getattr(app.state, "ingest_buffer", None)
     if buf is None:
+        get_logger().error("ingest failed: buffer not available")
         raise HTTPException(status_code=503, detail="ingest buffer not available")
     try:
         await buf.enqueue(
             machine_name=machine_name,
             rows=rows,
-            latest_sha_updates={},
         )
     except BufferFullError as e:
+        get_logger().warning("ingest rejected: buffer full")
         raise HTTPException(status_code=503, detail=str(e)) from e
 
     return {"received": len(payload.records)}
-
-
-@app.get("/file/{sha256}")
-async def file_by_sha256(
-    sha256: str,
-    limit: int = 100,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> dict[str, Any]:
-    if len(sha256) != 64:
-        raise HTTPException(status_code=400, detail="sha256 must be 64 hex chars")
-    try:
-        buf = getattr(app.state, "ingest_buffer", None)
-        if buf is not None:
-            await buf.flush()
-    except sqlite3.Error:
-        # Best-effort: fall through and serve whatever is already persisted.
-        pass
-    limit = max(1, min(int(limit), 1000))
-    rows = conn.execute(
-        """
-        SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
-        FROM file_record
-        WHERE sha256 = ?
-        ORDER BY scan_ts DESC, id DESC
-        LIMIT ?
-        """,
-        (sha256, limit),
-    ).fetchall()
-    return {"sha256": sha256, "records": [dict(r) for r in rows]}
-
-
-@app.get("/machine/{machine_name}")
-async def machine_records(
-    machine_name: str,
-    limit: int = 200,
-    sha256: str | None = None,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> dict[str, Any]:
-    try:
-        buf = getattr(app.state, "ingest_buffer", None)
-        if buf is not None:
-            await buf.flush()
-    except sqlite3.Error:
-        pass
-    limit = max(1, min(int(limit), 5000))
-    if sha256 is None:
-        rows = conn.execute(
-            """
-            SELECT file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
-            FROM file_record
-            WHERE machine_name = ?
-            ORDER BY scan_ts DESC, id DESC
-            LIMIT ?
-            """,
-            (machine_name, limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
-            FROM file_record
-            WHERE machine_name = ? AND sha256 = ?
-            ORDER BY scan_ts DESC, id DESC
-            LIMIT ?
-            """,
-            (machine_name, sha256, limit),
-        ).fetchall()
-    return {"machine_name": machine_name, "records": [dict(r) for r in rows]}

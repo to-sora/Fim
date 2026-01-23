@@ -64,6 +64,69 @@ def _cmd_graph_sha256(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def _cmd_query_file(args: argparse.Namespace) -> int:
+    if len(args.sha256) != 64:
+        raise SystemExit("sha256 must be 64 hex chars")
+    conn = connect()
+    try:
+        init_db(conn)
+        limit = max(1, min(int(args.limit), 1000))
+        rows = conn.execute(
+            """
+            SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+            FROM file_record
+            WHERE sha256 = ?
+            ORDER BY scan_ts DESC, id DESC
+            LIMIT ?
+            """,
+            (args.sha256, limit),
+        ).fetchall()
+        print(json.dumps({"sha256": args.sha256, "records": [dict(r) for r in rows]}, indent=2))
+        return 0
+    finally:
+        conn.close()
+
+
+def _cmd_query_machine(args: argparse.Namespace) -> int:
+    conn = connect()
+    try:
+        init_db(conn)
+        limit = max(1, min(int(args.limit), 5000))
+        if args.sha256 is None:
+            rows = conn.execute(
+                """
+                SELECT file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+                FROM file_record
+                WHERE machine_name = ?
+                ORDER BY scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                (args.machine_name, limit),
+            ).fetchall()
+        else:
+            if len(args.sha256) != 64:
+                raise SystemExit("sha256 must be 64 hex chars")
+            rows = conn.execute(
+                """
+                SELECT file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+                FROM file_record
+                WHERE machine_name = ? AND sha256 = ?
+                ORDER BY scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                (args.machine_name, args.sha256, limit),
+            ).fetchall()
+        print(
+            json.dumps(
+                {"machine_name": args.machine_name, "records": [dict(r) for r in rows]},
+                indent=2,
+            )
+        )
+        return 0
+    finally:
+        conn.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimserver-admin")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -96,6 +159,20 @@ def build_parser() -> argparse.ArgumentParser:
     sha.add_argument("--limit", type=int, default=20000)
     sha.set_defaults(func=_cmd_graph_sha256)
 
+    query = sub.add_parser("query", help="Query file records (local CLI only)")
+    query_sub = query.add_subparsers(dest="query_cmd", required=True)
+
+    file_rec = query_sub.add_parser("file", help="Query records by sha256")
+    file_rec.add_argument("sha256")
+    file_rec.add_argument("--limit", type=int, default=100)
+    file_rec.set_defaults(func=_cmd_query_file)
+
+    machine = query_sub.add_parser("machine", help="Query records for a machine")
+    machine.add_argument("machine_name")
+    machine.add_argument("--limit", type=int, default=200)
+    machine.add_argument("--sha256")
+    machine.set_defaults(func=_cmd_query_machine)
+
     return p
 
 
@@ -106,4 +183,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
