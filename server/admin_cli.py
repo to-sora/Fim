@@ -13,6 +13,48 @@ from .graph import (
     render_mermaid_flowchart,
 )
 
+def _to_str(v: object) -> str:
+    if v is None:
+        return ""
+    return str(v)
+
+
+def _print_table(
+    records: list[dict[str, object]],
+    columns: list[tuple[str, str]],
+    max_col_width: int = 80,
+) -> None:
+    headers = [h for _, h in columns]
+    rows: list[list[str]] = []
+
+    for r in records:
+        row = []
+        for key, _ in columns:
+            row.append(_to_str(r.get(key, "")))
+        rows.append(row)
+
+    widths = []
+    for i, h in enumerate(headers):
+        w = len(h)
+        for row in rows:
+            w = max(w, len(row[i]))
+        widths.append(min(w, max_col_width))
+
+    def trunc(s: str, w: int) -> str:
+        if len(s) <= w:
+            return s
+        return s[: w - 1] + "…"
+
+    def fmt_row(cells: list[str]) -> str:
+        return " | ".join(trunc(cells[i], widths[i]).ljust(widths[i]) for i in range(len(cells)))
+
+    sep = "-+-".join("-" * w for w in widths)
+
+    print(fmt_row(headers))
+    print(sep)
+    for row in rows:
+        print(fmt_row(row))
+
 
 def _format_bytes(size_bytes: int) -> str:
     if size_bytes <= 0:
@@ -145,6 +187,66 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
         if args.human:
             records = _attach_human_sizes(records)
         print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
+        return 0
+    finally:
+        conn.close()
+def _cmd_query_machine(args: argparse.Namespace) -> int:
+    conn = connect()
+    try:
+        init_db(conn)
+        limit = max(1, min(int(args.limit), 5000))
+
+        if args.sha256 is None:
+            rows = conn.execute(
+                """
+                SELECT file_path, file_name, size_bytes, sha256, tag,
+                       host_name, client_ip, scan_ts, urn
+                FROM file_record
+                WHERE machine_name = ?
+                ORDER BY scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                (args.machine_name, limit),
+            ).fetchall()
+        else:
+            if len(args.sha256) != 64:
+                raise SystemExit("sha256 must be 64 hex chars")
+            rows = conn.execute(
+                """
+                SELECT file_path, file_name, size_bytes, sha256, tag,
+                       host_name, client_ip, scan_ts, urn
+                FROM file_record
+                WHERE machine_name = ? AND sha256 = ?
+                ORDER BY scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                (args.machine_name, args.sha256, limit),
+            ).fetchall()
+
+        records = [dict(r) for r in rows]
+
+        if args.human:
+            records = _attach_human_sizes(records)
+
+        if args.table:
+            for r in records:
+                r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
+
+            cols = [
+                ("file_name", "FILE"),
+                ("file_path", "PATH"),
+                ("size_display", "SIZE"),
+                ("sha256", "SHA256"),
+                ("tag", "TAG"),
+                ("host_name", "HOST"),
+                ("client_ip", "IP"),
+                ("scan_ts", "SCAN_TS"),
+                ("urn", "URN"),
+            ]
+            _print_table(records, cols)
+        else:
+            print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
+
         return 0
     finally:
         conn.close()
