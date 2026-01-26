@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import signal
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +58,18 @@ class SingleInstance:
     def __init__(self, lock_path: Path) -> None:
         self._lock_path = lock_path
         self._fd: int | None = None
+        self._prev_sigterm: signal.Handlers | None = None
+        self._prev_sigint: signal.Handlers | None = None
+
+    def _signal_handler(self, signum: int, frame: Any) -> None:
+        self.release()
+        # Re-raise the signal with the original handler
+        if signum == signal.SIGTERM and self._prev_sigterm not in (signal.SIG_IGN, signal.SIG_DFL, None):
+            self._prev_sigterm(signum, frame)  # type: ignore[misc]
+        elif signum == signal.SIGINT and self._prev_sigint not in (signal.SIG_IGN, signal.SIG_DFL, None):
+            self._prev_sigint(signum, frame)  # type: ignore[misc]
+        else:
+            raise SystemExit(128 + signum)
 
     def acquire(self) -> bool:
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
@@ -64,11 +78,32 @@ class SingleInstance:
         except FileExistsError:
             return False
         os.write(self._fd, f"{os.getpid()}\n".encode("utf-8"))
+        # Register cleanup handlers
+        atexit.register(self.release)
+        self._prev_sigterm = signal.signal(signal.SIGTERM, self._signal_handler)
+        self._prev_sigint = signal.signal(signal.SIGINT, self._signal_handler)
         return True
 
     def release(self) -> None:
         if self._fd is None:
             return
+        # Unregister cleanup handlers
+        try:
+            atexit.unregister(self.release)
+        except Exception:
+            pass
+        if self._prev_sigterm is not None:
+            try:
+                signal.signal(signal.SIGTERM, self._prev_sigterm)
+            except Exception:
+                pass
+            self._prev_sigterm = None
+        if self._prev_sigint is not None:
+            try:
+                signal.signal(signal.SIGINT, self._prev_sigint)
+            except Exception:
+                pass
+            self._prev_sigint = None
         try:
             os.close(self._fd)
         finally:
