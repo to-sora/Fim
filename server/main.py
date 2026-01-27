@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from .auth import extract_bearer_token, machine_identity_for_token
-from .db import connect, init_db
+from .db import connect, init_db, now_iso_text
 from .ingest_buffer import BufferFullError, IngestBuffer
 from .logger import get_logger
 from .models import IngestRequest
@@ -96,6 +96,7 @@ async def ingest(
 ) -> dict[str, Any]:
     machine_id, machine_name = _require_machine_identity(conn, authorization)
     ip = _client_ip(request)
+    ingested_at = now_iso_text()
 
     rows = [
         (
@@ -117,6 +118,7 @@ async def ingest(
                 size_bytes=rec.size_bytes,
                 scan_ts=rec.scan_ts,
             ),
+            ingested_at,
         )
         for rec in payload.records
     ]

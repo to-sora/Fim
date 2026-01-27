@@ -11,8 +11,8 @@ from .logger import get_logger
 INSERT_SQL = """
 INSERT INTO file_record(
   machine_name, machine_id, mac, file_name, file_path, size_bytes, sha256,
-  tag, host_name, client_ip, scan_ts, urn
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  tag, host_name, client_ip, scan_ts, urn, ingested_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 

@@ -133,7 +133,7 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
         limit = max(1, min(int(args.limit), 1000))
         rows = conn.execute(
             """
-            SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+            SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
             FROM file_record
             WHERE sha256 = ?
             ORDER BY scan_ts DESC, id DESC
@@ -170,7 +170,7 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
         if args.sha256 is None:
             rows = conn.execute(
                 """
-                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
                 FROM file_record
                 WHERE machine_name = ?
                 ORDER BY scan_ts DESC, id DESC
@@ -183,7 +183,7 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                 raise SystemExit("sha256 must be 64 hex chars")
             rows = conn.execute(
                 """
-                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
                 FROM file_record
                 WHERE machine_name = ? AND sha256 = ?
                 ORDER BY scan_ts DESC, id DESC
