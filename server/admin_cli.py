@@ -148,8 +148,12 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
         if getattr(args, "table", False):
             cols = [
                 ("machine_name", "MACHINE"),
+                ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
+                ("scan_ts", "SCAN_TS"),
+                ("ingested_at", "INGESTED_AT"),
+                ("urn", "URN"),
             ]
             for r in records:
                 
@@ -201,8 +205,12 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                 r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             cols = [
                 ("machine_name", "MACHINE"),
+                ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
+                ("scan_ts", "SCAN_TS"),
+                ("ingested_at", "INGESTED_AT"),
+                ("urn", "URN"),
             ]
             _print_table(records, cols)
         else:
@@ -224,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-T",
         "--table",
         action="store_true",
-        help="Display query output as an ASCII table (includes URN column)",
+        help="Display query output as an ASCII table (includes path/time/URN columns)",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
