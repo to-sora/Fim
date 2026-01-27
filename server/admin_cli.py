@@ -227,6 +227,7 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                     (args.machine_name, args.sha256, limit),
                 ).fetchall()
         sha_count = None
+        sha_counts: dict[str, int] | None = None
         if args.sha256:
             sha_count = conn.execute(
                 "SELECT COUNT(*) FROM file_record WHERE machine_name = ? AND sha256 = ?",
@@ -237,6 +238,23 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
         if sha_count is not None:
             for r in records:
                 r["sha256_count"] = sha_count
+        else:
+            sha_values = sorted({str(r.get("sha256", "")) for r in records if r.get("sha256")})
+            if sha_values:
+                placeholders = ",".join("?" for _ in sha_values)
+                rows = conn.execute(
+                    f"""
+                    SELECT sha256, COUNT(*) AS c
+                    FROM file_record
+                    WHERE machine_name = ?
+                      AND sha256 IN ({placeholders})
+                    GROUP BY sha256
+                    """,
+                    (args.machine_name, *sha_values),
+                ).fetchall()
+                sha_counts = {str(r["sha256"]): int(r["c"]) for r in rows}
+                for r in records:
+                    r["sha256_count"] = sha_counts.get(str(r.get("sha256", "")), 0)
         if args.human:
             records = _attach_human_sizes(records)
 
