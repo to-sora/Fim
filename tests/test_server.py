@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from server.auth import create_or_rotate_token
@@ -247,6 +248,44 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         body = resp.json()
         self.assertEqual(body["received"], 2)
+
+    async def test_ingest_sets_ingested_at(self) -> None:
+        base = {"machine_id": "id1", "mac": "", "host_name": "host1", "tag": "test"}
+        rec = {
+            "file_path": "/tmp/ingested_at.txt",
+            "file_name": "ingested_at.txt",
+            "extension": "txt",
+            "size_bytes": 10,
+            "sha256": "3" * 64,
+            "scan_ts": "2026-01-21T00:00:00+00:00",
+        }
+        resp = await asgi_request(
+            app,
+            method="POST",
+            path="/ingest",
+            headers={"Authorization": f"Bearer {self.token}"},
+            json_body={**base, "records": [rec]},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+        # Wait for ingest buffer flush.
+        row = None
+        for _ in range(10):
+            conn = connect()
+            try:
+                row = conn.execute(
+                    "SELECT ingested_at FROM file_record WHERE file_path = ?",
+                    (rec["file_path"],),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row and row["ingested_at"]:
+                break
+            await asyncio.sleep(0.1)
+
+        self.assertIsNotNone(row)
+        self.assertIsNotNone(row["ingested_at"])
+        datetime.fromisoformat(row["ingested_at"])
 
 
 if __name__ == "__main__":
