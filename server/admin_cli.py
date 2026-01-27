@@ -110,7 +110,9 @@ def _cmd_graph_sha256(args: argparse.Namespace) -> int:
     conn = connect()
     try:
         init_db(conn)
-        segments = fetch_segments_for_sha256(conn, sha256=args.sha256, limit=args.limit)
+        segments = fetch_segments_for_sha256(
+            conn, sha256=args.sha256, limit=args.limit, gap_days=args.gap_days
+        )
         if args.format == "ascii":
             print(render_ascii_chain(segments))
         elif args.format == "dot":
@@ -157,6 +159,64 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
             _print_table(records, cols)
         else:
             print(json.dumps({"sha256": args.sha256, "records": records}, indent=2))
+        return 0
+    finally:
+        conn.close()
+
+
+def _cmd_query_filename(args: argparse.Namespace) -> int:
+    """Query file records by filename (supports partial matching with LIKE)."""
+    conn = connect()
+    try:
+        init_db(conn)
+        limit = max(1, min(int(args.limit), 1000))
+        # Use LIKE for partial matching if pattern contains % or _
+        # Otherwise do exact match or add wildcards
+        pattern = args.filename
+        if args.exact:
+            # Exact match
+            rows = conn.execute(
+                """
+                SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+                FROM file_record
+                WHERE file_name = ?
+                ORDER BY scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                (pattern, limit),
+            ).fetchall()
+        else:
+            # Partial match with LIKE (wrap with % if not already containing wildcards)
+            if "%" not in pattern and "_" not in pattern:
+                pattern = f"%{pattern}%"
+            rows = conn.execute(
+                """
+                SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+                FROM file_record
+                WHERE file_name LIKE ?
+                ORDER BY scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                (pattern, limit),
+            ).fetchall()
+
+        records = [dict(r) for r in rows]
+        if args.human:
+            records = _attach_human_sizes(records)
+
+        if getattr(args, "table", False):
+            cols = [
+                ("machine_name", "MACHINE"),
+                ("file_path", "PATH"),
+                ("file_name", "FILE"),
+                ("size_display", "SIZE"),
+                ("scan_ts", "SCAN_TS"),
+            ]
+            for r in records:
+                r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
+            _print_table(records, cols)
+        else:
+            print(json.dumps({"filename": args.filename, "records": records}, indent=2))
         return 0
     finally:
         conn.close()
@@ -254,6 +314,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output format",
     )
     sha.add_argument("--limit", type=int, default=20000)
+    sha.add_argument(
+        "--gap-days",
+        type=int,
+        default=30,
+        dest="gap_days",
+        help="Days gap threshold to split into separate nodes (default: 30)",
+    )
     sha.set_defaults(func=_cmd_graph_sha256)
 
     query = sub.add_parser("query", help="Query file records (local CLI only)")
@@ -263,6 +330,12 @@ def build_parser() -> argparse.ArgumentParser:
     file_rec.add_argument("sha256")
     file_rec.add_argument("--limit", type=int, default=100)
     file_rec.set_defaults(func=_cmd_query_file)
+
+    filename = query_sub.add_parser("filename", help="Query records by filename")
+    filename.add_argument("filename", help="Filename to search (supports LIKE patterns with %% and _)")
+    filename.add_argument("--limit", type=int, default=5, help="Max records to return (default: 5)")
+    filename.add_argument("--exact", action="store_true", help="Exact filename match (no partial matching)")
+    filename.set_defaults(func=_cmd_query_filename)
 
     machine = query_sub.add_parser("machine", help="Query records for a machine")
     machine.add_argument("machine_name")
