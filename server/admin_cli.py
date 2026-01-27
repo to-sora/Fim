@@ -74,6 +74,18 @@ def _print_table(
         print(fmt_row(row))
 
 
+def _dedupe_for_table(records: list[dict[str, object]], *, key_fields: tuple[str, ...]) -> list[dict[str, object]]:
+    seen: set[tuple[str, ...]] = set()
+    out: list[dict[str, object]] = []
+    for r in records:
+        key = tuple(_to_str(r.get(k, "")) for k in key_fields)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def _cmd_token_create(args: argparse.Namespace) -> int:
     conn = connect()
     try:
@@ -152,6 +164,7 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
             records = _attach_human_sizes(records)
 
         if getattr(args, "table", False):
+            records = _dedupe_for_table(records, key_fields=("file_path", "file_name"))
             cols = [
                 ("machine_name", "MACHINE"),
                 ("file_path", "PATH"),
@@ -259,6 +272,7 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
             records = _attach_human_sizes(records)
 
         if getattr(args, "table", False):
+            records = _dedupe_for_table(records, key_fields=("file_path", "file_name"))
             for r in records:
                 r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             cols = [

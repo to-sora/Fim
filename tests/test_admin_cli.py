@@ -221,6 +221,41 @@ class AdminCliTests(unittest.TestCase):
         # Column order: MACHINE, PATH, FILE, SIZE, SHA256_COUNT, SCAN_TS, INGESTED_AT, URN
         self.assertEqual(parts[4], "2")
 
+    def test_query_machine_table_dedupes_by_path(self) -> None:
+        conn = connect()
+        try:
+            init_db(conn)
+            sha = "f" * 64
+            _insert_record(
+                conn,
+                machine_name="M1",
+                file_name="dup.bin",
+                file_path="/tmp/dup.bin",
+                sha256=sha,
+                scan_ts="2026-01-21T00:00:00+00:00",
+                ingested_at="2026-01-21T00:01+00:00",
+            )
+            _insert_record(
+                conn,
+                machine_name="M1",
+                file_name="dup.bin",
+                file_path="/tmp/dup.bin",
+                sha256=sha,
+                scan_ts="2026-01-21T00:00:10+00:00",
+                ingested_at="2026-01-21T00:02+00:00",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        out = _capture_output(
+            _cmd_query_machine,
+            SimpleNamespace(machine_name="M1", limit=0, sha256=None, table=True, human=False),
+        )
+        lines = [line for line in out.splitlines() if line.strip()]
+        # header + separator + 1 data row
+        self.assertEqual(len(lines), 3)
+
     def test_query_machine_table_counts_sha256(self) -> None:
         conn = connect()
         try:
