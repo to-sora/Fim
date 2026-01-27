@@ -250,28 +250,31 @@ def _cmd_query_name(args: argparse.Namespace) -> int:
         limit_val = 0 if args.limit is None else int(args.limit)
         limit = None if limit_val <= 0 else min(limit_val, 5000)
         pattern = f"%{args.substring}%"
+        where_clause = "WHERE file_name LIKE ?"
+        params: list[object] = [pattern]
+        if args.machine_name:
+            where_clause += " AND machine_name = ?"
+            params.append(args.machine_name)
         if limit is None:
             rows = conn.execute(
-                """
+                f"""
                 SELECT file_name, sha256, scan_ts, ingested_at
                 FROM file_record
-                WHERE machine_name = ?
-                  AND file_name LIKE ?
+                {where_clause}
                 ORDER BY file_name ASC, scan_ts DESC, id DESC
                 """,
-                (args.machine_name, pattern),
+                tuple(params),
             ).fetchall()
         else:
             rows = conn.execute(
-                """
+                f"""
                 SELECT file_name, sha256, scan_ts, ingested_at
                 FROM file_record
-                WHERE machine_name = ?
-                  AND file_name LIKE ?
+                {where_clause}
                 ORDER BY file_name ASC, scan_ts DESC, id DESC
                 LIMIT ?
                 """,
-                (args.machine_name, pattern, limit),
+                tuple(params + [limit]),
             ).fetchall()
 
         records = [dict(r) for r in rows]
@@ -284,7 +287,10 @@ def _cmd_query_name(args: argparse.Namespace) -> int:
             ]
             _print_table(records, cols)
         else:
-            print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
+            payload: dict[str, object] = {"records": records}
+            if args.machine_name:
+                payload["machine_name"] = args.machine_name
+            print(json.dumps(payload, indent=2))
         return 0
     finally:
         conn.close()
@@ -349,8 +355,8 @@ def build_parser() -> argparse.ArgumentParser:
     machine.set_defaults(func=_cmd_query_machine)
 
     name = query_sub.add_parser("name", help="Query records by filename substring")
-    name.add_argument("machine_name")
     name.add_argument("substring")
+    name.add_argument("--machine-name", help="Filter to a specific machine")
     name.add_argument("--limit", type=int, default=0, help="0 = no limit")
     name.set_defaults(func=_cmd_query_name)
 

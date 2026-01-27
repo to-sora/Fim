@@ -203,7 +203,8 @@ python -m server.admin_cli query machine MachineNameA --sha256 <SHA256>
 Query records by filename substring (returns file name, scan time, server ingest time, sha256):
 
 ```bash
-python -m server.admin_cli query name MachineNameA "substring"
+python -m server.admin_cli query name "substring"
+python -m server.admin_cli query name "substring" --machine-name MachineNameA
 ```
 
 ### Testing
