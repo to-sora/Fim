@@ -243,6 +243,53 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def _cmd_query_name(args: argparse.Namespace) -> int:
+    conn = connect()
+    try:
+        init_db(conn)
+        limit_val = 0 if args.limit is None else int(args.limit)
+        limit = None if limit_val <= 0 else min(limit_val, 5000)
+        pattern = f"%{args.substring}%"
+        if limit is None:
+            rows = conn.execute(
+                """
+                SELECT file_name, sha256, scan_ts, ingested_at
+                FROM file_record
+                WHERE machine_name = ?
+                  AND file_name LIKE ?
+                ORDER BY file_name ASC, scan_ts DESC, id DESC
+                """,
+                (args.machine_name, pattern),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT file_name, sha256, scan_ts, ingested_at
+                FROM file_record
+                WHERE machine_name = ?
+                  AND file_name LIKE ?
+                ORDER BY file_name ASC, scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                (args.machine_name, pattern, limit),
+            ).fetchall()
+
+        records = [dict(r) for r in rows]
+        if getattr(args, "table", False):
+            cols = [
+                ("file_name", "FILE"),
+                ("scan_ts", "SCAN_TS"),
+                ("ingested_at", "INGESTED_AT"),
+                ("sha256", "SHA256"),
+            ]
+            _print_table(records, cols)
+        else:
+            print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
+        return 0
+    finally:
+        conn.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimserver-admin")
     p.add_argument(
@@ -300,6 +347,12 @@ def build_parser() -> argparse.ArgumentParser:
     machine.add_argument("--limit", type=int, default=0, help="0 = no limit")
     machine.add_argument("--sha256")
     machine.set_defaults(func=_cmd_query_machine)
+
+    name = query_sub.add_parser("name", help="Query records by filename substring")
+    name.add_argument("machine_name")
+    name.add_argument("substring")
+    name.add_argument("--limit", type=int, default=0, help="0 = no limit")
+    name.set_defaults(func=_cmd_query_name)
 
     return p
 
