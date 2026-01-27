@@ -98,6 +98,11 @@ async def ingest(
     ip = _client_ip(request)
     ingested_at = now_iso_text()
 
+    accepted_records = [rec for rec in payload.records if rec.size_bytes > 0]
+    skipped_zero_size = len(payload.records) - len(accepted_records)
+    if skipped_zero_size:
+        get_logger().warning("ingest skipped zero-size files", extra={"count": skipped_zero_size})
+
     rows = [
         (
             machine_name,
@@ -120,19 +125,23 @@ async def ingest(
             ),
             ingested_at,
         )
-        for rec in payload.records
+        for rec in accepted_records
     ]
     buf = getattr(app.state, "ingest_buffer", None)
     if buf is None:
         get_logger().error("ingest failed: buffer not available")
         raise HTTPException(status_code=503, detail="ingest buffer not available")
     try:
-        await buf.enqueue(
-            machine_name=machine_name,
-            rows=rows,
-        )
+        if rows:
+            await buf.enqueue(
+                machine_name=machine_name,
+                rows=rows,
+            )
     except BufferFullError as e:
         get_logger().warning("ingest rejected: buffer full")
         raise HTTPException(status_code=503, detail=str(e)) from e
 
-    return {"received": len(payload.records)}
+    response: dict[str, Any] = {"received": len(rows)}
+    if skipped_zero_size:
+        response["skipped_zero_size"] = skipped_zero_size
+    return response
