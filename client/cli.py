@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import load_config
 from .enumerator import iter_files
-from .scanner import scan_files
+from .scanner import get_bucket_stats, scan_files, select_files_for_run
 from .state import SingleInstance, load_state, save_state
 from .uploader import ensure_server_hello, upload_records
 from .utils import format_bytes, get_host_name, get_mac_address, iso_now, normalize_path, setup_logger
@@ -51,11 +51,33 @@ def _print_ingest_summary(resp: dict) -> None:
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     state_path = Path(args.state_path)
-    state = load_state(state_path)
     logger = setup_logger(Path(args.log_path))
 
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
     with SingleInstance(lock_path):
+        # Load state INSIDE the lock to avoid race conditions
+        state = load_state(state_path)
+
+        # Log bucket stats for debugging
+        bucket_stats = get_bucket_stats(config, state)
+        unscanned_count = bucket_stats.get(-1, 0)
+        scanned_count = sum(v for k, v in bucket_stats.items() if k != -1)
+        logger.info(json.dumps({
+            "event": "bucket_stats",
+            "total_files": sum(bucket_stats.values()),
+            "state_entries": len(state.files),
+            "unscanned_count": unscanned_count,
+            "scanned_count": scanned_count,
+            "ts": iso_now(),
+        }))
+        # Print summary to stdout for visibility
+        print(json.dumps({
+            "status": "run_start",
+            "unscanned": unscanned_count,
+            "scanned": scanned_count,
+            "state_entries": len(state.files),
+        }))
+
         if not config.server_url:
             print(json.dumps({"status": "config_error", "error": "server_url is empty in config"}))
             return 2
@@ -231,6 +253,63 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_debug_buckets(args: argparse.Namespace) -> int:
+    """Show bucket distribution for debugging priority issues."""
+    config = load_config(args.config)
+    state_path = Path(args.state_path)
+    state = load_state(state_path)
+
+    # Get bucket statistics
+    bucket_stats = get_bucket_stats(config, state)
+
+    # Get first N files from each bucket
+    files = select_files_for_run(config, state)
+
+    # Group files by bucket for display
+    bucket_files: dict[int, list[str]] = {}
+    for entry in files:
+        last_scan = state.files.get(entry.path, "")
+        from .scanner import _bucket_index
+        bucket = _bucket_index(last_scan)
+        bucket_files.setdefault(bucket, []).append(entry.path)
+
+    # Calculate total
+    total_files = sum(bucket_stats.values())
+
+    # Print summary
+    print(json.dumps({
+        "total_files_in_scan_paths": total_files,
+        "total_files_in_state": len(state.files),
+        "bucket_distribution": {
+            str(k): v for k, v in sorted(bucket_stats.items())
+        },
+    }, indent=2))
+
+    # Print first few files from each bucket
+    if args.verbose:
+        print("\n--- First 5 files from each bucket (in priority order) ---")
+        for bucket in sorted(bucket_files.keys()):
+            bucket_name = "unscanned (bucket -1)" if bucket == -1 else f"bucket {bucket}"
+            print(f"\n{bucket_name}: {bucket_stats.get(bucket, 0)} files")
+            for path in bucket_files[bucket][:5]:
+                last_scan = state.files.get(path, "(never)")
+                print(f"  {path}")
+                print(f"    last_scan: {last_scan}")
+
+    # Show state file entries that don't match any file in scan paths
+    if args.verbose:
+        scanned_paths = {e.path for e in files}
+        orphaned = [p for p in state.files if p not in scanned_paths]
+        if orphaned:
+            print(f"\n--- Orphaned state entries (in state but not in scan paths): {len(orphaned)} ---")
+            for p in orphaned[:10]:
+                print(f"  {p}: {state.files[p]}")
+            if len(orphaned) > 10:
+                print(f"  ... and {len(orphaned) - 10} more")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimclient")
     p.add_argument("--config", default="client/config.json", help="Path to client config JSON")
@@ -260,6 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     val = sub.add_parser("validate-config", help="Validate config and print normalized JSON")
     val.set_defaults(func=_cmd_validate_config)
+
+    dbg = sub.add_parser("debug-buckets", help="Show bucket distribution for debugging")
+    dbg.add_argument("--state-path", required=True, help="Path to state JSON file")
+    dbg.add_argument("-v", "--verbose", action="store_true", help="Show sample files from each bucket")
+    dbg.set_defaults(func=_cmd_debug_buckets)
 
     return p
 

@@ -51,6 +51,16 @@ def _bucket_index(last_scan: str) -> int:
         return -1
 
 
+def get_bucket_stats(config: ClientConfig, state: ClientState) -> dict[int, int]:
+    """Return bucket index -> file count mapping for diagnostics."""
+    buckets: dict[int, int] = {}
+    for entry in iter_files(config):
+        last_scan = state.files.get(entry.path, "")
+        bucket = _bucket_index(last_scan)
+        buckets[bucket] = buckets.get(bucket, 0) + 1
+    return buckets
+
+
 def select_files_for_run(config: ClientConfig, state: ClientState) -> list[FileEntry]:
     buckets: dict[int, list[FileEntry]] = {}
     for entry in iter_files(config):
