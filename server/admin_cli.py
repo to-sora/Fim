@@ -141,7 +141,13 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
             """,
             (args.sha256, limit),
         ).fetchall()
+        sha_count = conn.execute(
+            "SELECT COUNT(*) FROM file_record WHERE sha256 = ?",
+            (args.sha256,),
+        ).fetchone()[0]
         records = [dict(r) for r in rows]
+        for r in records:
+            r["sha256_count"] = sha_count
         if args.human:
             records = _attach_human_sizes(records)
 
@@ -151,6 +157,7 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
                 ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
+                ("sha256_count", "SHA256_COUNT"),
                 ("scan_ts", "SCAN_TS"),
                 ("ingested_at", "INGESTED_AT"),
                 ("urn", "URN"),
@@ -219,8 +226,17 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                     """,
                     (args.machine_name, args.sha256, limit),
                 ).fetchall()
+        sha_count = None
+        if args.sha256:
+            sha_count = conn.execute(
+                "SELECT COUNT(*) FROM file_record WHERE machine_name = ? AND sha256 = ?",
+                (args.machine_name, args.sha256),
+            ).fetchone()[0]
 
         records = [dict(r) for r in rows]
+        if sha_count is not None:
+            for r in records:
+                r["sha256_count"] = sha_count
         if args.human:
             records = _attach_human_sizes(records)
 
@@ -232,6 +248,7 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                 ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
+                ("sha256_count", "SHA256_COUNT"),
                 ("scan_ts", "SCAN_TS"),
                 ("ingested_at", "INGESTED_AT"),
                 ("urn", "URN"),

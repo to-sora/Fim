@@ -217,6 +217,8 @@ class AdminCliTests(unittest.TestCase):
             SimpleNamespace(machine_name="M1", limit=0, sha256=sha, table=True, human=False),
         )
         self.assertIn("records: 2", out)
+        header = out.splitlines()[0]
+        self.assertIn("SHA256_COUNT", header)
 
 
 if __name__ == "__main__":
