@@ -159,6 +159,7 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
                 
                 r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             _print_table(records, cols)
+            print(f"records: {len(records)}")
         else:
             print(json.dumps({"sha256": args.sha256, "records": records}, indent=2))
         return 0
@@ -236,6 +237,8 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                 ("urn", "URN"),
             ]
             _print_table(records, cols)
+            if args.sha256:
+                print(f"records: {len(records)}")
         else:
             print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
         return 0

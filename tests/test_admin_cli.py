@@ -187,6 +187,37 @@ class AdminCliTests(unittest.TestCase):
         datetime.fromisoformat(scan_ts)
         datetime.fromisoformat(ingested_at)
 
+    def test_query_machine_table_counts_sha256(self) -> None:
+        conn = connect()
+        try:
+            init_db(conn)
+            sha = "e" * 64
+            _insert_record(
+                conn,
+                machine_name="M1",
+                file_name="dup1.bin",
+                sha256=sha,
+                scan_ts="2026-01-21T00:00:00+00:00",
+                ingested_at="2026-01-21T00:01+00:00",
+            )
+            _insert_record(
+                conn,
+                machine_name="M1",
+                file_name="dup2.bin",
+                sha256=sha,
+                scan_ts="2026-01-21T00:00:10+00:00",
+                ingested_at="2026-01-21T00:02+00:00",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        out = _capture_output(
+            _cmd_query_machine,
+            SimpleNamespace(machine_name="M1", limit=0, sha256=sha, table=True, human=False),
+        )
+        self.assertIn("records: 2", out)
+
 
 if __name__ == "__main__":
     unittest.main()
