@@ -264,6 +264,7 @@ def _cmd_debug_buckets(args: argparse.Namespace) -> int:
 
     # Get first N files from each bucket
     files = select_files_for_run(config, state)
+    iter_paths = {e.path for e in files}
 
     # Group files by bucket for display
     bucket_files: dict[int, list[str]] = {}
@@ -276,13 +277,38 @@ def _cmd_debug_buckets(args: argparse.Namespace) -> int:
     # Calculate total
     total_files = sum(bucket_stats.values())
 
+    # Find path mismatches
+    orphaned_in_state = [p for p in state.files if p not in iter_paths]
+
+    # Check for files that SHOULD be in state but lookup fails
+    # This would indicate a path format mismatch
+    missing_lookups = []
+    for entry in files:
+        if entry.path not in state.files:
+            # Check if a similar path exists in state (case-insensitive or partial match)
+            for state_path_entry in state.files:
+                if entry.path.lower() == state_path_entry.lower() and entry.path != state_path_entry:
+                    missing_lookups.append({
+                        "iter_path": entry.path,
+                        "state_path": state_path_entry,
+                        "issue": "case_mismatch"
+                    })
+                elif os.path.basename(entry.path) == os.path.basename(state_path_entry) and entry.path != state_path_entry:
+                    missing_lookups.append({
+                        "iter_path": entry.path,
+                        "state_path": state_path_entry,
+                        "issue": "basename_match_path_differs"
+                    })
+
     # Print summary
     print(json.dumps({
         "total_files_in_scan_paths": total_files,
         "total_files_in_state": len(state.files),
+        "orphaned_state_entries": len(orphaned_in_state),
         "bucket_distribution": {
             str(k): v for k, v in sorted(bucket_stats.items())
         },
+        "path_mismatches": missing_lookups[:10] if missing_lookups else [],
     }, indent=2))
 
     # Print first few files from each bucket
@@ -297,15 +323,20 @@ def _cmd_debug_buckets(args: argparse.Namespace) -> int:
                 print(f"    last_scan: {last_scan}")
 
     # Show state file entries that don't match any file in scan paths
-    if args.verbose:
-        scanned_paths = {e.path for e in files}
-        orphaned = [p for p in state.files if p not in scanned_paths]
-        if orphaned:
-            print(f"\n--- Orphaned state entries (in state but not in scan paths): {len(orphaned)} ---")
-            for p in orphaned[:10]:
-                print(f"  {p}: {state.files[p]}")
-            if len(orphaned) > 10:
-                print(f"  ... and {len(orphaned) - 10} more")
+    if args.verbose and orphaned_in_state:
+        print(f"\n--- Orphaned state entries (in state but not in scan paths): {len(orphaned_in_state)} ---")
+        for p in orphaned_in_state[:10]:
+            print(f"  {p}: {state.files[p]}")
+        if len(orphaned_in_state) > 10:
+            print(f"  ... and {len(orphaned_in_state) - 10} more")
+
+    if missing_lookups:
+        print(f"\n--- PATH MISMATCH BUG DETECTED: {len(missing_lookups)} files ---")
+        for m in missing_lookups[:5]:
+            print(f"  iter_files returns: {m['iter_path']}")
+            print(f"  but state has:      {m['state_path']}")
+            print(f"  issue: {m['issue']}")
+            print()
 
     return 0
 
