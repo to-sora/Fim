@@ -170,31 +170,54 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
     conn = connect()
     try:
         init_db(conn)
-        limit = max(1, min(int(args.limit), 5000))
+        limit_val = 0 if args.limit is None else int(args.limit)
+        limit = None if limit_val <= 0 else min(limit_val, 5000)
         if args.sha256 is None:
-            rows = conn.execute(
-                """
-                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
-                FROM file_record
-                WHERE machine_name = ?
-                ORDER BY scan_ts DESC, id DESC
-                LIMIT ?
-                """,
-                (args.machine_name, limit),
-            ).fetchall()
+            if limit is None:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    """,
+                    (args.machine_name,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (args.machine_name, limit),
+                ).fetchall()
         else:
             if len(args.sha256) != 64:
                 raise SystemExit("sha256 must be 64 hex chars")
-            rows = conn.execute(
-                """
-                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
-                FROM file_record
-                WHERE machine_name = ? AND sha256 = ?
-                ORDER BY scan_ts DESC, id DESC
-                LIMIT ?
-                """,
-                (args.machine_name, args.sha256, limit),
-            ).fetchall()
+            if limit is None:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ? AND sha256 = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    """,
+                    (args.machine_name, args.sha256),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ? AND sha256 = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (args.machine_name, args.sha256, limit),
+                ).fetchall()
 
         records = [dict(r) for r in rows]
         if args.human:
@@ -274,7 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     machine = query_sub.add_parser("machine", help="Query records for a machine")
     machine.add_argument("machine_name")
-    machine.add_argument("--limit", type=int, default=200)
+    machine.add_argument("--limit", type=int, default=0, help="0 = no limit")
     machine.add_argument("--sha256")
     machine.set_defaults(func=_cmd_query_machine)
 
