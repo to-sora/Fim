@@ -70,4 +70,4 @@ def is_subpath(path: str, maybe_parent: str) -> bool:
 
 
 def iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="minutes")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")

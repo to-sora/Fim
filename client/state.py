@@ -14,7 +14,7 @@ from .utils import iso_now
 @dataclass
 class ClientState:
     machine_id: str
-    files: dict[str, str]  # abs_path -> YYYY-MM-DD
+    files: dict[str, str]  # abs_path -> ISO 8601 timestamp (or date for backward compat)
     schedule_last_run: dict[str, str]  # Mon0910 -> YYYY-MM-DD
 
 
