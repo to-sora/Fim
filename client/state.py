@@ -9,7 +9,31 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .utils import iso_now
+from .utils import iso_now, normalize_path
+
+
+def _normalize_state_paths(files: dict[str, str]) -> dict[str, str]:
+    """Normalize all file paths in state to ensure consistent lookup.
+
+    This handles cases where:
+    - Symlinks were resolved differently between runs
+    - Mount points changed
+    - Paths were saved with different format
+    """
+    normalized: dict[str, str] = {}
+    for path, date_val in files.items():
+        try:
+            # Only normalize if the file still exists
+            norm_path = normalize_path(path)
+            # Keep the most recent scan date if duplicates exist
+            if norm_path not in normalized or date_val > normalized.get(norm_path, ""):
+                normalized[norm_path] = date_val
+        except (OSError, ValueError):
+            # File doesn't exist or path is invalid, keep original
+            # This preserves entries for files that might come back
+            normalized[path] = date_val
+    return normalized
+
 
 @dataclass
 class ClientState:
@@ -36,9 +60,12 @@ def load_state(path: Path) -> ClientState:
     schedule_last_run = raw.get("schedule_last_run") or {}
     if not isinstance(files, dict) or not isinstance(schedule_last_run, dict):
         raise TypeError("invalid state file format")
+    # Normalize paths to ensure consistent lookup with iter_files
+    raw_files = {str(k): str(v) for k, v in files.items()}
+    normalized_files = _normalize_state_paths(raw_files)
     return ClientState(
         machine_id=str(machine_id),
-        files={str(k): str(v) for k, v in files.items()},
+        files=normalized_files,
         schedule_last_run={str(k): str(v) for k, v in schedule_last_run.items()},
     )
 
