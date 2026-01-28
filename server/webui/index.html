@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Fim Admin UI</title>
-    <link rel="stylesheet" href="/static/style.css?v=2" />
+    <link rel="stylesheet" href="/static/style.css?v=3" />
   </head>
   <body>
     <header class="site-header">
@@ -96,6 +96,10 @@
       <section class="panel wide">
         <h2>Results</h2>
         <div class="meta" id="result-meta">No data yet.</div>
+        <div class="actions">
+          <button id="btn-table-copy" type="button">Copy table</button>
+          <button id="btn-table-csv" type="button">Export CSV</button>
+        </div>
         <div class="table-wrap">
           <table id="result-table"></table>
         </div>
@@ -103,12 +107,16 @@
 
       <section class="panel wide">
         <h2>Graph output</h2>
+        <div class="actions">
+          <button id="btn-graph-copy" type="button">Copy graph</button>
+          <button id="btn-graph-download" type="button">Download TXT</button>
+        </div>
         <pre id="graph-output">No graph yet.</pre>
       </section>
     </main>
 
     <datalist id="machine-list"></datalist>
 
-    <script src="/static/app.js?v=2"></script>
+    <script src="/static/app.js?v=3"></script>
   </body>
 </html>

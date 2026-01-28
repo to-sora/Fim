@@ -25,6 +25,9 @@ const columnsName = [
 let currentRecords = [];
 let currentColumns = [];
 let sortState = { key: null, dir: 1 };
+let lastTableQuery = "";
+let lastGraphQuery = "";
+let lastGraphText = "";
 
 function setStatus(text, isError = false) {
   statusEl.textContent = text;
@@ -90,6 +93,38 @@ function renderTable(records, columns) {
 
   const sortLabel = sortState.key ? ` • sorted by ${sortState.key}` : "";
   metaEl.textContent = `${currentRecords.length} records${sortLabel}`;
+}
+
+function csvEscape(value) {
+  const str = String(value ?? "");
+  if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function formatTimestamp() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(
+    now.getHours()
+  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+function downloadFile(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function copyToClipboard(text) {
+  await navigator.clipboard.writeText(text);
 }
 
 function sortRecords(records, key, dir) {
@@ -172,6 +207,9 @@ document.getElementById("btn-machine").addEventListener("click", async () => {
     }
     const payload = await fetchJson(`/api/query/machine?${params.toString()}`);
     renderTable(payload.records || [], columnsFull);
+    lastTableQuery = `machine_name=${machine} sha256=${sha || ""} limit=${limit || "0"} dedupe=${
+      dedupe ? "1" : "0"
+    }`;
     setStatus("Machine query done.");
   } catch (err) {
     setStatus(`Machine query failed: ${err.message}`, true);
@@ -196,6 +234,7 @@ document.getElementById("btn-sha256").addEventListener("click", async () => {
     });
     const payload = await fetchJson(`/api/query/file?${params.toString()}`);
     renderTable(payload.records || [], columnsFull);
+    lastTableQuery = `sha256=${sha} limit=${limit || "100"} dedupe=${dedupe ? "1" : "0"}`;
     setStatus("SHA256 query done.");
   } catch (err) {
     setStatus(`SHA256 query failed: ${err.message}`, true);
@@ -222,6 +261,7 @@ document.getElementById("btn-name").addEventListener("click", async () => {
     }
     const payload = await fetchJson(`/api/query/name?${params.toString()}`);
     renderTable(payload.records || [], columnsName);
+    lastTableQuery = `substring=${substring} machine_name=${machine || ""} limit=${limit || "0"}`;
     setStatus("Name search done.");
   } catch (err) {
     setStatus(`Name search failed: ${err.message}`, true);
@@ -249,11 +289,73 @@ document.getElementById("btn-graph").addEventListener("click", async () => {
       throw new Error(text || `HTTP ${res.status}`);
     }
     const text = await res.text();
-    graphEl.textContent = text || "(empty)";
+    lastGraphQuery = `sha256=${sha} fmt=${fmt} limit=${limit || "20000"}`;
+    lastGraphText = text || "(empty)";
+    graphEl.textContent = lastGraphText;
     setStatus("Graph rendered.");
   } catch (err) {
     setStatus(`Graph failed: ${err.message}`, true);
   }
+});
+
+document.getElementById("btn-table-csv").addEventListener("click", () => {
+  if (!currentRecords.length) {
+    setStatus("No table data to export.", true);
+    return;
+  }
+  const header = currentColumns.map((c) => csvEscape(c.label)).join(",");
+  const rows = currentRecords.map((row) =>
+    currentColumns.map((c) => csvEscape(row[c.key] ?? "")).join(",")
+  );
+  rows.push(`# query: ${lastTableQuery}`);
+  const csv = [header, ...rows].join("\n");
+  const filename = `fim-table-${formatTimestamp()}.csv`;
+  downloadFile(csv, filename, "text/csv");
+  setStatus("CSV exported.");
+});
+
+document.getElementById("btn-table-copy").addEventListener("click", async () => {
+  if (!currentRecords.length) {
+    setStatus("No table data to copy.", true);
+    return;
+  }
+  const header = currentColumns.map((c) => csvEscape(c.label)).join(",");
+  const rows = currentRecords.map((row) =>
+    currentColumns.map((c) => csvEscape(row[c.key] ?? "")).join(",")
+  );
+  rows.push(`# query: ${lastTableQuery}`);
+  const csv = [header, ...rows].join("\n");
+  try {
+    await copyToClipboard(csv);
+    setStatus("Table copied to clipboard.");
+  } catch (err) {
+    setStatus(`Copy failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("btn-graph-copy").addEventListener("click", async () => {
+  if (!lastGraphText) {
+    setStatus("No graph data to copy.", true);
+    return;
+  }
+  const payload = `# query: ${lastGraphQuery}\n${lastGraphText}`;
+  try {
+    await copyToClipboard(payload);
+    setStatus("Graph copied to clipboard.");
+  } catch (err) {
+    setStatus(`Copy failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("btn-graph-download").addEventListener("click", () => {
+  if (!lastGraphText) {
+    setStatus("No graph data to download.", true);
+    return;
+  }
+  const payload = `# query: ${lastGraphQuery}\n${lastGraphText}`;
+  const filename = `fim-graph-${formatTimestamp()}.txt`;
+  downloadFile(payload, filename, "text/plain");
+  setStatus("Graph downloaded.");
 });
 
 loadMachines();
