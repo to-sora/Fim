@@ -1,0 +1,208 @@
+const statusEl = document.getElementById("status");
+const tableEl = document.getElementById("result-table");
+const metaEl = document.getElementById("result-meta");
+const graphEl = document.getElementById("graph-output");
+
+const columnsFull = [
+  { key: "machine_name", label: "Machine" },
+  { key: "file_path", label: "Path" },
+  { key: "file_name", label: "File" },
+  { key: "size_human", label: "Size" },
+  { key: "sha256_count", label: "SHA256 Count" },
+  { key: "scan_ts", label: "Scan TS" },
+  { key: "ingested_at", label: "Ingested At" },
+  { key: "urn", label: "URN" },
+  { key: "sha256", label: "SHA256" },
+];
+
+const columnsName = [
+  { key: "file_name", label: "File" },
+  { key: "sha256", label: "SHA256" },
+  { key: "scan_ts", label: "Scan TS" },
+  { key: "ingested_at", label: "Ingested At" },
+];
+
+function setStatus(text, isError = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle("error", isError);
+}
+
+function clearTable() {
+  tableEl.innerHTML = "";
+}
+
+function renderTable(records, columns) {
+  clearTable();
+  if (!records || records.length === 0) {
+    metaEl.textContent = "No records.";
+    return;
+  }
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  columns.forEach((col) => {
+    const th = document.createElement("th");
+    th.textContent = col.label;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  tableEl.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  records.forEach((row) => {
+    const tr = document.createElement("tr");
+    columns.forEach((col) => {
+      const td = document.createElement("td");
+      let value = row[col.key];
+      if (value === undefined || value === null || value === "") {
+        value = "-";
+      }
+      td.textContent = String(value);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tableEl.appendChild(tbody);
+
+  metaEl.textContent = `${records.length} records`;
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function loadMachines() {
+  try {
+    const payload = await fetchJson("/api/machines");
+    const list = document.getElementById("machine-list");
+    list.innerHTML = "";
+    payload.machines.forEach((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      list.appendChild(option);
+    });
+  } catch (err) {
+    setStatus(`Failed to load machines: ${err.message}`, true);
+  }
+}
+
+function getValue(id) {
+  return document.getElementById(id).value.trim();
+}
+
+function getChecked(id) {
+  return document.getElementById(id).checked;
+}
+
+document.getElementById("btn-machine").addEventListener("click", async () => {
+  const machine = getValue("machine-name");
+  const sha = getValue("machine-sha");
+  const limit = getValue("machine-limit");
+  const dedupe = getChecked("machine-dedupe");
+  if (!machine) {
+    setStatus("Machine name is required.", true);
+    return;
+  }
+  setStatus("Querying machine...");
+  graphEl.textContent = "No graph yet.";
+  try {
+    const params = new URLSearchParams({
+      machine_name: machine,
+      limit: limit || "0",
+      dedupe: dedupe ? "1" : "0",
+    });
+    if (sha) {
+      params.set("sha256", sha);
+    }
+    const payload = await fetchJson(`/api/query/machine?${params.toString()}`);
+    renderTable(payload.records || [], columnsFull);
+    setStatus("Machine query done.");
+  } catch (err) {
+    setStatus(`Machine query failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("btn-sha256").addEventListener("click", async () => {
+  const sha = getValue("sha256-value");
+  const limit = getValue("sha256-limit");
+  const dedupe = getChecked("sha256-dedupe");
+  if (!sha) {
+    setStatus("SHA256 is required.", true);
+    return;
+  }
+  setStatus("Querying sha256...");
+  graphEl.textContent = "No graph yet.";
+  try {
+    const params = new URLSearchParams({
+      sha256: sha,
+      limit: limit || "100",
+      dedupe: dedupe ? "1" : "0",
+    });
+    const payload = await fetchJson(`/api/query/file?${params.toString()}`);
+    renderTable(payload.records || [], columnsFull);
+    setStatus("SHA256 query done.");
+  } catch (err) {
+    setStatus(`SHA256 query failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("btn-name").addEventListener("click", async () => {
+  const substring = getValue("name-substring");
+  const machine = getValue("name-machine");
+  const limit = getValue("name-limit");
+  if (!substring) {
+    setStatus("Substring is required.", true);
+    return;
+  }
+  setStatus("Searching names...");
+  graphEl.textContent = "No graph yet.";
+  try {
+    const params = new URLSearchParams({
+      substring,
+      limit: limit || "0",
+    });
+    if (machine) {
+      params.set("machine_name", machine);
+    }
+    const payload = await fetchJson(`/api/query/name?${params.toString()}`);
+    renderTable(payload.records || [], columnsName);
+    setStatus("Name search done.");
+  } catch (err) {
+    setStatus(`Name search failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById("btn-graph").addEventListener("click", async () => {
+  const sha = getValue("graph-sha");
+  const fmt = document.getElementById("graph-format").value;
+  const limit = getValue("graph-limit");
+  if (!sha) {
+    setStatus("SHA256 is required.", true);
+    return;
+  }
+  setStatus("Rendering graph...");
+  try {
+    const params = new URLSearchParams({
+      sha256: sha,
+      fmt,
+      limit: limit || "20000",
+    });
+    const res = await fetch(`/api/graph/sha256?${params.toString()}`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    const text = await res.text();
+    graphEl.textContent = text || "(empty)";
+    setStatus("Graph rendered.");
+  } catch (err) {
+    setStatus(`Graph failed: ${err.message}`, true);
+  }
+});
+
+loadMachines();
