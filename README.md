@@ -138,6 +138,7 @@ Systemd examples:
 
 - Server unit: `scripts/fimserver.service`
 - Client unit: `scripts/fimclient.service`
+- Web UI unit: `scripts/fimwebui.service`
 
 Copy the unit files to `/etc/systemd/system/`, adjust paths/users, then run:
 
@@ -145,6 +146,7 @@ Copy the unit files to `/etc/systemd/system/`, adjust paths/users, then run:
 sudo systemctl daemon-reload
 sudo systemctl enable --now fimserver.service
 sudo systemctl enable --now fimclient.service
+sudo systemctl enable --now fimwebui.service
 ```
 
 Validate config (prints normalized JSON):
@@ -157,6 +159,23 @@ Shortcut script (`daemon` is default when no args are provided):
 
 ```bash
 ./start_client.sh
+```
+
+### Web UI (no auth)
+
+The web UI is a separate service and runs on its own port. It reads directly from the same
+SQLite DB and does not require auth.
+
+Defaults:
+
+- `FIM_WEB_HOST` = `0.0.0.0`
+- `FIM_WEB_PORT` = `19992`
+- API server defaults to `19991` (set `FIM_HOST` / `FIM_PORT` if needed).
+
+Run it locally:
+
+```bash
+./start_webui.sh
 ```
 
 ### Graph (CLI)

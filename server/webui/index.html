@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fim Admin UI</title>
+    <link rel="stylesheet" href="/static/style.css?v=5" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-title">Fim Admin UI</div>
+        <div class="brand-subtitle">Read-only viewer for file records</div>
+      </div>
+      <div class="status" id="status">Ready.</div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>Machine query</h2>
+        <label>
+          Machine name
+          <input id="machine-name" list="machine-list" placeholder="MachineNameA" />
+        </label>
+        <label>
+          SHA256 (optional)
+          <input id="machine-sha" placeholder="64 hex chars" />
+        </label>
+        <label>
+          Limit (0 = no limit)
+          <input id="machine-limit" type="number" value="200" min="0" />
+        </label>
+        <label class="inline">
+          <input id="machine-dedupe" type="checkbox" checked />
+          Dedupe path/name
+        </label>
+        <button id="btn-machine">Run machine query</button>
+      </section>
+
+      <section class="panel">
+        <h2>SHA256 query</h2>
+        <label>
+          SHA256
+          <input id="sha256-value" placeholder="64 hex chars" />
+        </label>
+        <label>
+          Limit
+          <input id="sha256-limit" type="number" value="200" min="1" />
+        </label>
+        <label class="inline">
+          <input id="sha256-dedupe" type="checkbox" checked />
+          Dedupe path/name
+        </label>
+        <button id="btn-sha256">Run sha256 query</button>
+      </section>
+
+      <section class="panel">
+        <h2>Filename search</h2>
+        <label>
+          Substring
+          <input id="name-substring" placeholder="clip_vision" />
+        </label>
+        <label>
+          Machine name (optional)
+          <input id="name-machine" list="machine-list" placeholder="MachineNameA" />
+        </label>
+        <label>
+          Limit (0 = no limit)
+          <input id="name-limit" type="number" value="200" min="0" />
+        </label>
+        <button id="btn-name">Search names</button>
+      </section>
+
+      <section class="panel">
+        <h2>SHA256 graph</h2>
+        <label>
+          SHA256
+          <input id="graph-sha" placeholder="64 hex chars" />
+        </label>
+        <label>
+          Format
+          <select id="graph-format">
+            <option value="ascii">ASCII</option>
+            <option value="mermaid">Mermaid</option>
+            <option value="dot">Graphviz DOT</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+        <label>
+          Limit
+          <input id="graph-limit" type="number" value="20000" min="1" />
+        </label>
+        <button id="btn-graph">Render graph</button>
+      </section>
+
+      <section class="panel wide">
+        <h2>Results</h2>
+        <div class="meta" id="result-meta">No data yet.</div>
+        <div class="actions">
+          <button id="btn-table-copy" type="button">Copy table</button>
+          <button id="btn-table-csv" type="button">Export CSV</button>
+        </div>
+        <div class="table-scroll-top" id="table-scroll-top">
+          <div class="table-scroll-top-inner" id="table-scroll-top-inner"></div>
+        </div>
+        <div class="table-wrap">
+          <table id="result-table"></table>
+        </div>
+      </section>
+
+      <section class="panel wide">
+        <h2>Graph output</h2>
+        <div class="actions">
+          <button id="btn-graph-copy" type="button">Copy graph</button>
+          <button id="btn-graph-download" type="button">Download TXT</button>
+        </div>
+        <pre id="graph-output">No graph yet.</pre>
+      </section>
+    </main>
+
+    <datalist id="machine-list"></datalist>
+
+    <script src="/static/app.js?v=5"></script>
+  </body>
+</html>
