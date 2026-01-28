@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from server.auth import create_or_rotate_token
@@ -247,6 +248,95 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         body = resp.json()
         self.assertEqual(body["received"], 2)
+
+    async def test_ingest_skips_zero_size(self) -> None:
+        base = {"machine_id": "id1", "mac": "", "host_name": "host1", "tag": "test"}
+        rec_zero = {
+            "file_path": "/tmp/zero.bin",
+            "file_name": "zero.bin",
+            "extension": "bin",
+            "size_bytes": 0,
+            "sha256": "4" * 64,
+            "scan_ts": "2026-01-21T00:00:00+00:00",
+        }
+        rec_ok = {
+            "file_path": "/tmp/ok.bin",
+            "file_name": "ok.bin",
+            "extension": "bin",
+            "size_bytes": 10,
+            "sha256": "5" * 64,
+            "scan_ts": "2026-01-21T00:00:10+00:00",
+        }
+        resp = await asgi_request(
+            app,
+            method="POST",
+            path="/ingest",
+            headers={"Authorization": f"Bearer {self.token}"},
+            json_body={**base, "records": [rec_zero, rec_ok]},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertEqual(body["received"], 1)
+        self.assertEqual(body.get("skipped_zero_size"), 1)
+
+        row_zero = None
+        row_ok = None
+        for _ in range(10):
+            conn = connect()
+            try:
+                rows = conn.execute(
+                    "SELECT file_path FROM file_record WHERE file_path IN (?, ?)",
+                    (rec_zero["file_path"], rec_ok["file_path"]),
+                ).fetchall()
+            finally:
+                conn.close()
+            paths = {row["file_path"] for row in rows}
+            row_zero = rec_zero["file_path"] if rec_zero["file_path"] in paths else None
+            row_ok = rec_ok["file_path"] if rec_ok["file_path"] in paths else None
+            if row_ok and not row_zero:
+                break
+            await asyncio.sleep(0.1)
+
+        self.assertIsNotNone(row_ok)
+        self.assertIsNone(row_zero)
+
+    async def test_ingest_sets_ingested_at(self) -> None:
+        base = {"machine_id": "id1", "mac": "", "host_name": "host1", "tag": "test"}
+        rec = {
+            "file_path": "/tmp/ingested_at.txt",
+            "file_name": "ingested_at.txt",
+            "extension": "txt",
+            "size_bytes": 10,
+            "sha256": "3" * 64,
+            "scan_ts": "2026-01-21T00:00:00+00:00",
+        }
+        resp = await asgi_request(
+            app,
+            method="POST",
+            path="/ingest",
+            headers={"Authorization": f"Bearer {self.token}"},
+            json_body={**base, "records": [rec]},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+
+        # Wait for ingest buffer flush.
+        row = None
+        for _ in range(10):
+            conn = connect()
+            try:
+                row = conn.execute(
+                    "SELECT ingested_at FROM file_record WHERE file_path = ?",
+                    (rec["file_path"],),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row and row["ingested_at"]:
+                break
+            await asyncio.sleep(0.1)
+
+        self.assertIsNotNone(row)
+        self.assertIsNotNone(row["ingested_at"])
+        datetime.fromisoformat(row["ingested_at"])
 
 
 if __name__ == "__main__":

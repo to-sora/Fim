@@ -51,11 +51,11 @@ def _print_ingest_summary(resp: dict) -> None:
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     state_path = Path(args.state_path)
-    state = load_state(state_path)
     logger = setup_logger(Path(args.log_path))
 
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
     with SingleInstance(lock_path):
+        state = load_state(state_path)
         if not config.server_url:
             print(json.dumps({"status": "config_error", "error": "server_url is empty in config"}))
             return 2
@@ -107,9 +107,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 break
             else:
                 _print_ingest_summary(resp)
-                today = datetime.now(timezone.utc).date().isoformat()
                 for r in batch:
-                    state.files[r.file_path] = today
+                    state.files[r.file_path] = r.scan_ts
                 save_state(state_path, state)
 
         print(
@@ -135,11 +134,11 @@ def _now_schedule_key() -> str:
 def _cmd_daemon(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     state_path = Path(args.state_path)
-    state = load_state(state_path)
     lock_path = state_path.with_suffix(state_path.suffix + ".lock")
     logger = setup_logger(Path(args.log_path))
 
     with SingleInstance(lock_path):
+        state = load_state(state_path)
         if not config.server_url:
             print(json.dumps({"status": "config_error", "error": "server_url is empty in config"}))
             return 2
@@ -197,7 +196,7 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                                 )
                                 _print_ingest_summary(resp)
                                 for r in batch:
-                                    state.files[r.file_path] = today
+                                    state.files[r.file_path] = r.scan_ts
                                 save_state(state_path, state)
                             state.schedule_last_run[key] = today
                             save_state(state_path, state)

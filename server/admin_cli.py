@@ -74,6 +74,18 @@ def _print_table(
         print(fmt_row(row))
 
 
+def _dedupe_for_table(records: list[dict[str, object]], *, key_fields: tuple[str, ...]) -> list[dict[str, object]]:
+    seen: set[tuple[str, ...]] = set()
+    out: list[dict[str, object]] = []
+    for r in records:
+        key = tuple(_to_str(r.get(k, "")) for k in key_fields)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def _cmd_token_create(args: argparse.Namespace) -> int:
     conn = connect()
     try:
@@ -133,7 +145,7 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
         limit = max(1, min(int(args.limit), 1000))
         rows = conn.execute(
             """
-            SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
+            SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
             FROM file_record
             WHERE sha256 = ?
             ORDER BY scan_ts DESC, id DESC
@@ -141,20 +153,33 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
             """,
             (args.sha256, limit),
         ).fetchall()
+        sha_count = conn.execute(
+            "SELECT COUNT(*) FROM file_record WHERE sha256 = ?",
+            (args.sha256,),
+        ).fetchone()[0]
         records = [dict(r) for r in rows]
+        for r in records:
+            r["sha256_count"] = sha_count
         if args.human:
             records = _attach_human_sizes(records)
 
         if getattr(args, "table", False):
+            records = _dedupe_for_table(records, key_fields=("file_path", "file_name"))
             cols = [
                 ("machine_name", "MACHINE"),
+                ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
+                ("sha256_count", "SHA256_COUNT"),
+                ("scan_ts", "SCAN_TS"),
+                ("ingested_at", "INGESTED_AT"),
+                ("urn", "URN"),
             ]
             for r in records:
                 
                 r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             _print_table(records, cols)
+            print(f"records: {len(records)}")
         else:
             print(json.dumps({"sha256": args.sha256, "records": records}, indent=2))
         return 0
@@ -166,47 +191,158 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
     conn = connect()
     try:
         init_db(conn)
-        limit = max(1, min(int(args.limit), 5000))
+        limit_val = 0 if args.limit is None else int(args.limit)
+        limit = None if limit_val <= 0 else min(limit_val, 5000)
         if args.sha256 is None:
-            rows = conn.execute(
-                """
-                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
-                FROM file_record
-                WHERE machine_name = ?
-                ORDER BY scan_ts DESC, id DESC
-                LIMIT ?
-                """,
-                (args.machine_name, limit),
-            ).fetchall()
+            if limit is None:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    """,
+                    (args.machine_name,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (args.machine_name, limit),
+                ).fetchall()
         else:
             if len(args.sha256) != 64:
                 raise SystemExit("sha256 must be 64 hex chars")
-            rows = conn.execute(
-                """
-                SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn
-                FROM file_record
-                WHERE machine_name = ? AND sha256 = ?
-                ORDER BY scan_ts DESC, id DESC
-                LIMIT ?
-                """,
-                (args.machine_name, args.sha256, limit),
-            ).fetchall()
+            if limit is None:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ? AND sha256 = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    """,
+                    (args.machine_name, args.sha256),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT machine_name ,file_path, file_name, size_bytes, sha256, tag, host_name, client_ip, scan_ts, urn, ingested_at
+                    FROM file_record
+                    WHERE machine_name = ? AND sha256 = ?
+                    ORDER BY scan_ts DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (args.machine_name, args.sha256, limit),
+                ).fetchall()
+        sha_count = None
+        sha_counts: dict[str, int] | None = None
+        if args.sha256:
+            sha_count = conn.execute(
+                "SELECT COUNT(*) FROM file_record WHERE machine_name = ? AND sha256 = ?",
+                (args.machine_name, args.sha256),
+            ).fetchone()[0]
 
         records = [dict(r) for r in rows]
+        if sha_count is not None:
+            for r in records:
+                r["sha256_count"] = sha_count
+        else:
+            sha_values = sorted({str(r.get("sha256", "")) for r in records if r.get("sha256")})
+            if sha_values:
+                placeholders = ",".join("?" for _ in sha_values)
+                rows = conn.execute(
+                    f"""
+                    SELECT sha256, COUNT(*) AS c
+                    FROM file_record
+                    WHERE machine_name = ?
+                      AND sha256 IN ({placeholders})
+                    GROUP BY sha256
+                    """,
+                    (args.machine_name, *sha_values),
+                ).fetchall()
+                sha_counts = {str(r["sha256"]): int(r["c"]) for r in rows}
+                for r in records:
+                    r["sha256_count"] = sha_counts.get(str(r.get("sha256", "")), 0)
         if args.human:
             records = _attach_human_sizes(records)
 
         if getattr(args, "table", False):
+            records = _dedupe_for_table(records, key_fields=("file_path", "file_name"))
             for r in records:
                 r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             cols = [
                 ("machine_name", "MACHINE"),
+                ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
+                ("sha256_count", "SHA256_COUNT"),
+                ("scan_ts", "SCAN_TS"),
+                ("ingested_at", "INGESTED_AT"),
+                ("urn", "URN"),
+            ]
+            _print_table(records, cols)
+            if args.sha256:
+                print(f"records: {len(records)}")
+        else:
+            print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
+        return 0
+    finally:
+        conn.close()
+
+
+def _cmd_query_name(args: argparse.Namespace) -> int:
+    conn = connect()
+    try:
+        init_db(conn)
+        limit_val = 0 if args.limit is None else int(args.limit)
+        limit = None if limit_val <= 0 else min(limit_val, 5000)
+        pattern = f"%{args.substring}%"
+        where_clause = "WHERE file_name LIKE ?"
+        params: list[object] = [pattern]
+        if args.machine_name:
+            where_clause += " AND machine_name = ?"
+            params.append(args.machine_name)
+        if limit is None:
+            rows = conn.execute(
+                f"""
+                SELECT file_name, sha256, scan_ts, ingested_at
+                FROM file_record
+                {where_clause}
+                ORDER BY file_name ASC, scan_ts DESC, id DESC
+                """,
+                tuple(params),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""
+                SELECT file_name, sha256, scan_ts, ingested_at
+                FROM file_record
+                {where_clause}
+                ORDER BY file_name ASC, scan_ts DESC, id DESC
+                LIMIT ?
+                """,
+                tuple(params + [limit]),
+            ).fetchall()
+
+        records = [dict(r) for r in rows]
+        if getattr(args, "table", False):
+            cols = [
+                ("file_name", "FILE"),
+                ("scan_ts", "SCAN_TS"),
+                ("ingested_at", "INGESTED_AT"),
+                ("sha256", "SHA256"),
             ]
             _print_table(records, cols)
         else:
-            print(json.dumps({"machine_name": args.machine_name, "records": records}, indent=2))
+            payload: dict[str, object] = {"records": records}
+            if args.machine_name:
+                payload["machine_name"] = args.machine_name
+            print(json.dumps(payload, indent=2))
         return 0
     finally:
         conn.close()
@@ -224,7 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-T",
         "--table",
         action="store_true",
-        help="Display query output as an ASCII table (includes URN column)",
+        help="Display query output as an ASCII table (includes path/time/URN columns)",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -266,9 +402,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     machine = query_sub.add_parser("machine", help="Query records for a machine")
     machine.add_argument("machine_name")
-    machine.add_argument("--limit", type=int, default=200)
+    machine.add_argument("--limit", type=int, default=0, help="0 = no limit")
     machine.add_argument("--sha256")
     machine.set_defaults(func=_cmd_query_machine)
+
+    name = query_sub.add_parser("name", help="Query records by filename substring")
+    name.add_argument("substring")
+    name.add_argument("--machine-name", help="Filter to a specific machine")
+    name.add_argument("--limit", type=int, default=0, help="0 = no limit")
+    name.set_defaults(func=_cmd_query_name)
 
     return p
 

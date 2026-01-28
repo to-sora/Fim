@@ -9,7 +9,6 @@ Monorepo:
 
 ```bash
 python3 -m venv venv
-source venv/bin/activate
 pip install -r server/requirements.txt
 pip install -r client/requirements.txt
 ```
@@ -19,14 +18,12 @@ pip install -r client/requirements.txt
 Create/rotate a token for a `MachineName` (group):
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli token create MachineNameA
 ```
 
 List or delete tokens:
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli token list
 python -m server.admin_cli token delete MachineNameA
 ```
@@ -41,7 +38,7 @@ Environment:
 
 - `FIM_DB_PATH` (optional): SQLite path (default `data/fim.sqlite3`)
 - `FIM_DB_BUSY_TIMEOUT_MS` (optional): SQLite busy timeout in ms (default `5000`)
-- Timestamps are stored as ISO 8601 text in UTC with minute precision (format: `YYYY-MM-DDTHH:MM+00:00`).
+- `scan_ts` is client-supplied ISO 8601; `ingested_at` is server time in UTC (minute precision).
 
 Endpoints:
 
@@ -116,28 +113,24 @@ URN structure (computed on the server for each record):
 Dry-run (list eligible files and totals):
 
 ```bash
-source venv/bin/activate
 python -m client.cli dry-run --list
 ```
 
 Run once (quota in GB; may exceed by 1 file):
 
 ```bash
-source venv/bin/activate
 python -m client.cli run --state-path .fim_state.json --log-path .fim.log --quota-gb 10
 ```
 
 First-time/full run (no quota limit):
 
 ```bash
-source venv/bin/activate
 python -m client.cli run --state-path .fim_state.json --log-path .fim.log
 ```
 
 Daemon scheduler (uses `schedule_quota_gb` in config):
 
 ```bash
-source venv/bin/activate
 python -m client.cli daemon --state-path .fim_state.json --log-path .fim.log
 ```
 
@@ -157,7 +150,6 @@ sudo systemctl enable --now fimclient.service
 Validate config (prints normalized JSON):
 
 ```bash
-source venv/bin/activate
 python -m client.cli validate-config
 ```
 
@@ -172,28 +164,24 @@ Shortcut script (`daemon` is default when no args are provided):
 ASCII chain:
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli graph sha256 <SHA256> --format ascii
 ```
 
 Mermaid flowchart:
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli graph sha256 <SHA256> --format mermaid
 ```
 
 Graphviz DOT:
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli graph sha256 <SHA256> --format dot
 ```
 
 Raw JSON:
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli graph sha256 <SHA256> --format json
 ```
 
@@ -202,21 +190,25 @@ python -m server.admin_cli graph sha256 <SHA256> --format json
 Lookup records by SHA256:
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli query file <SHA256>
 ```
 
 Query records for a machine (optional SHA256 filter):
 
 ```bash
-source venv/bin/activate
 python -m server.admin_cli query machine MachineNameA
 python -m server.admin_cli query machine MachineNameA --sha256 <SHA256>
+```
+
+Query records by filename substring (returns file name, scan time, server ingest time, sha256):
+
+```bash
+python -m server.admin_cli query name "substring"
+python -m server.admin_cli query name "substring" --machine-name MachineNameA
 ```
 
 ### Testing
 
 ```bash
-source venv/bin/activate
 python -m unittest discover -s tests -v
 ```

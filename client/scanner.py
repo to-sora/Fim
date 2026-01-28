@@ -3,13 +3,16 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import ClientConfig
 from .enumerator import FileEntry, iter_files
 from .state import ClientState
 from .utils import iso_now
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config import ClientConfig
 
 
 @dataclass(frozen=True)
@@ -42,25 +45,41 @@ def _is_sha256_hex(value: str) -> bool:
     return True
 
 
-def _bucket_index(last_scan: str) -> int:
-    if not last_scan:
-        return -1
+_MIN_SCAN_TS = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _parse_last_scan(value: str) -> datetime | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
     try:
-        return date.fromisoformat(last_scan).toordinal() // 15
+        parsed = datetime.fromisoformat(raw)
     except ValueError:
-        return -1
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def select_files_for_run(config: ClientConfig, state: ClientState) -> list[FileEntry]:
-    buckets: dict[int, list[FileEntry]] = {}
-    for entry in iter_files(config):
+    entries = list(iter_files(config))
+    unscanned: list[FileEntry] = []
+    scanned: list[tuple[datetime, str, FileEntry]] = []
+    for entry in entries:
         last_scan = state.files.get(entry.path, "")
-        bucket = _bucket_index(last_scan)
-        buckets.setdefault(bucket, []).append(entry)
-    ordered: list[FileEntry] = []
-    for bucket in sorted(buckets.keys()):
-        ordered.extend(buckets[bucket])
-    return ordered
+        parsed = _parse_last_scan(last_scan)
+        if parsed is None:
+            unscanned.append(entry)
+        else:
+            scanned.append((parsed, entry.path, entry))
+    if unscanned:
+        return unscanned
+    scanned.sort(key=lambda item: (item[0], item[1]))
+    return [entry for _, _, entry in scanned]
 
 
 def scan_files(

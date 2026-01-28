@@ -49,7 +49,8 @@ def init_db(conn: sqlite3.Connection) -> None:
           host_name TEXT,
           client_ip TEXT,
           scan_ts TEXT,
-          urn TEXT
+          urn TEXT,
+          ingested_at TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_file_record_sha256 ON file_record(sha256);
@@ -57,6 +58,10 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_file_record_machine_path_time ON file_record(machine_name, file_path, scan_ts);
         """
     )
+    # Lightweight migration for existing databases.
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(file_record)").fetchall()}
+    if "ingested_at" not in cols:
+        conn.execute("ALTER TABLE file_record ADD COLUMN ingested_at TEXT;")
     conn.commit()
 
 

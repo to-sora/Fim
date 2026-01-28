@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from .auth import extract_bearer_token, machine_identity_for_token
-from .db import connect, init_db
+from .db import connect, init_db, now_iso_text
 from .ingest_buffer import BufferFullError, IngestBuffer
 from .logger import get_logger
 from .models import IngestRequest
@@ -96,6 +96,12 @@ async def ingest(
 ) -> dict[str, Any]:
     machine_id, machine_name = _require_machine_identity(conn, authorization)
     ip = _client_ip(request)
+    ingested_at = now_iso_text()
+
+    accepted_records = [rec for rec in payload.records if rec.size_bytes > 0]
+    skipped_zero_size = len(payload.records) - len(accepted_records)
+    if skipped_zero_size:
+        get_logger().warning("ingest skipped zero-size files", extra={"count": skipped_zero_size})
 
     rows = [
         (
@@ -117,20 +123,25 @@ async def ingest(
                 size_bytes=rec.size_bytes,
                 scan_ts=rec.scan_ts,
             ),
+            ingested_at,
         )
-        for rec in payload.records
+        for rec in accepted_records
     ]
     buf = getattr(app.state, "ingest_buffer", None)
     if buf is None:
         get_logger().error("ingest failed: buffer not available")
         raise HTTPException(status_code=503, detail="ingest buffer not available")
     try:
-        await buf.enqueue(
-            machine_name=machine_name,
-            rows=rows,
-        )
+        if rows:
+            await buf.enqueue(
+                machine_name=machine_name,
+                rows=rows,
+            )
     except BufferFullError as e:
         get_logger().warning("ingest rejected: buffer full")
         raise HTTPException(status_code=503, detail=str(e)) from e
 
-    return {"received": len(payload.records)}
+    response: dict[str, Any] = {"received": len(rows)}
+    if skipped_zero_size:
+        response["skipped_zero_size"] = skipped_zero_size
+    return response

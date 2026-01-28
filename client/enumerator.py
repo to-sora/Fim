@@ -6,8 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .config import ClientConfig
 from .utils import is_subpath, normalize_path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config import ClientConfig
 
 
 def _normalize_scan_roots(scan_paths: list[str]) -> list[str]:
