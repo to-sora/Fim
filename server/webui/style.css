@@ -147,6 +147,19 @@ th {
   font-weight: 600;
 }
 
+.sort-button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sort-button:hover {
+  color: #93c5fd;
+}
+
 tbody tr:nth-child(even) {
   background: #0b1120;
 }

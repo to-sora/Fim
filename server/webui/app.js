@@ -22,6 +22,10 @@ const columnsName = [
   { key: "ingested_at", label: "Ingested At" },
 ];
 
+let currentRecords = [];
+let currentColumns = [];
+let sortState = { key: null, dir: 1 };
+
 function setStatus(text, isError = false) {
   statusEl.textContent = text;
   statusEl.classList.toggle("error", isError);
@@ -38,18 +42,38 @@ function renderTable(records, columns) {
     return;
   }
 
+  currentRecords = records.slice();
+  currentColumns = columns;
+
+  if (sortState.key) {
+    currentRecords = sortRecords(currentRecords, sortState.key, sortState.dir);
+  }
+
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
   columns.forEach((col) => {
     const th = document.createElement("th");
-    th.textContent = col.label;
+    const button = document.createElement("button");
+    button.className = "sort-button";
+    button.type = "button";
+    button.dataset.key = col.key;
+    button.textContent = col.label;
+    if (sortState.key === col.key) {
+      button.textContent += sortState.dir === 1 ? " ▲" : " ▼";
+    }
+    button.addEventListener("click", () => {
+      const nextDir = sortState.key === col.key ? -sortState.dir : 1;
+      sortState = { key: col.key, dir: nextDir };
+      renderTable(currentRecords, currentColumns);
+    });
+    th.appendChild(button);
     headRow.appendChild(th);
   });
   thead.appendChild(headRow);
   tableEl.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  records.forEach((row) => {
+  currentRecords.forEach((row) => {
     const tr = document.createElement("tr");
     columns.forEach((col) => {
       const td = document.createElement("td");
@@ -64,7 +88,34 @@ function renderTable(records, columns) {
   });
   tableEl.appendChild(tbody);
 
-  metaEl.textContent = `${records.length} records`;
+  const sortLabel = sortState.key ? ` • sorted by ${sortState.key}` : "";
+  metaEl.textContent = `${currentRecords.length} records${sortLabel}`;
+}
+
+function sortRecords(records, key, dir) {
+  const numericKeys = new Set(["size_bytes", "sha256_count"]);
+  const dateKeys = new Set(["scan_ts", "ingested_at"]);
+  const sizeAlias = key === "size_human";
+  const sortKey = sizeAlias ? "size_bytes" : key;
+
+  return records.slice().sort((a, b) => {
+    let va = a[sortKey];
+    let vb = b[sortKey];
+
+    if (va === undefined || va === null || va === "") va = null;
+    if (vb === undefined || vb === null || vb === "") vb = null;
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+
+    if (numericKeys.has(sortKey)) {
+      return (Number(va) - Number(vb)) * dir;
+    }
+    if (dateKeys.has(sortKey)) {
+      return (new Date(va).getTime() - new Date(vb).getTime()) * dir;
+    }
+    return String(va).localeCompare(String(vb)) * dir;
+  });
 }
 
 async function fetchJson(url) {
