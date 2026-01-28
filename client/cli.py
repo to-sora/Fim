@@ -6,7 +6,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import load_config
+from .config import ClientConfig, load_config
+from .multi_config import (
+    derive_paths_from_tag,
+    derive_tag_from_config,
+    discover_configs,
+    validate_scan_path_disjoint,
+    validate_schedule_spacing,
+)
 from .enumerator import iter_files
 from .scanner import scan_files
 from .state import SingleInstance, load_state, save_state
@@ -230,6 +237,74 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_validate_all(args: argparse.Namespace) -> int:
+    config_dir = Path(args.config_dir)
+    min_spacing = int(args.min_spacing)
+
+    configs = discover_configs(config_dir)
+    if not configs:
+        print(json.dumps({"status": "no_configs", "config_dir": str(config_dir)}))
+        return 0
+
+    loaded: list[tuple[str, ClientConfig]] = []
+    errors: list[dict[str, str]] = []
+
+    for config_id, config_path in configs:
+        try:
+            config = load_config(config_path)
+            tag = derive_tag_from_config(config_path, config)
+            loaded.append((tag, config))
+            paths = derive_paths_from_tag(config_dir.parent, tag)
+            print(
+                json.dumps(
+                    {
+                        "status": "config_valid",
+                        "config_id": config_id,
+                        "path": str(config_path),
+                        "tag": tag,
+                        "state_path": str(paths["state_path"]),
+                        "lock_path": str(paths["lock_path"]),
+                        "log_path": str(paths["log_path"]),
+                    }
+                )
+            )
+        except Exception as e:
+            errors.append({"config_id": config_id, "path": str(config_path), "error": str(e)})
+            print(
+                json.dumps(
+                    {
+                        "status": "config_error",
+                        "config_id": config_id,
+                        "path": str(config_path),
+                        "error": str(e),
+                    }
+                )
+            )
+
+    if errors:
+        print(json.dumps({"status": "validation_failed", "error_count": len(errors)}))
+        return 1
+
+    scan_warnings = validate_scan_path_disjoint(loaded)
+    for warning in scan_warnings:
+        print(json.dumps({"status": "warning", "type": "scan_path_overlap", "message": warning}))
+
+    schedule_warnings = validate_schedule_spacing(loaded, min_gap_minutes=min_spacing)
+    for warning in schedule_warnings:
+        print(json.dumps({"status": "warning", "type": "schedule_conflict", "message": warning}))
+
+    print(
+        json.dumps(
+            {
+                "status": "validation_complete",
+                "config_count": len(loaded),
+                "warning_count": len(scan_warnings) + len(schedule_warnings),
+            }
+        )
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimclient")
     p.add_argument("--config", default="client/config.json", help="Path to client config JSON")
@@ -259,6 +334,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     val = sub.add_parser("validate-config", help="Validate config and print normalized JSON")
     val.set_defaults(func=_cmd_validate_config)
+
+    val_all = sub.add_parser("validate-all", help="Validate all FIM_config_*.json files")
+    val_all.add_argument("--config-dir", default="client", help="Directory with configs")
+    val_all.add_argument("--min-spacing", type=int, default=5, help="Min minutes between schedules")
+    val_all.set_defaults(func=_cmd_validate_all)
 
     return p
 
