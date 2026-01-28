@@ -176,14 +176,15 @@ class AdminCliTests(unittest.TestCase):
         )
         header = out.splitlines()[0]
         self.assertIn("PATH", header)
+        self.assertIn("TAG", header)
         self.assertIn("SCAN_TS", header)
         self.assertIn("INGESTED_AT", header)
         self.assertIn("URN", header)
         # Validate timestamps are parseable in data rows.
         data_line = out.splitlines()[2]
         parts = [p.strip() for p in data_line.split("|")]
-        scan_ts = parts[4]
-        ingested_at = parts[5]
+        scan_ts = parts[6]
+        ingested_at = parts[7]
         datetime.fromisoformat(scan_ts)
         datetime.fromisoformat(ingested_at)
 
@@ -218,8 +219,8 @@ class AdminCliTests(unittest.TestCase):
         )
         data_line = out.splitlines()[2]
         parts = [p.strip() for p in data_line.split("|")]
-        # Column order: MACHINE, PATH, FILE, SIZE, SHA256_COUNT, SCAN_TS, INGESTED_AT, URN
-        self.assertEqual(parts[4], "2")
+        # Column order: MACHINE, TAG, PATH, FILE, SIZE, SHA256_COUNT, SCAN_TS, INGESTED_AT, URN
+        self.assertEqual(parts[5], "2")
 
     def test_query_machine_table_dedupes_by_path(self) -> None:
         conn = connect()

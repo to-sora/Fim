@@ -9,6 +9,7 @@ from pathlib import Path
 from .config import load_config
 from .enumerator import iter_files
 from .scanner import scan_files
+from .multi_config import discover_config_paths, verify_config_schedules
 from .state import SingleInstance, load_state, save_state
 from .uploader import ensure_server_hello, upload_records
 from .utils import format_bytes, get_host_name, get_mac_address, iso_now, normalize_path, setup_logger
@@ -230,6 +231,33 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_verify_configs(args: argparse.Namespace) -> int:
+    config_dir = Path(args.config_dir)
+    if not config_dir.exists():
+        print(
+            json.dumps(
+                {"status": "error", "error": f"config_dir not found: {config_dir}"},
+                indent=2,
+            )
+        )
+        return 2
+    paths = discover_config_paths(config_dir, args.pattern)
+    if not paths:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "error": f"no configs matched {args.pattern} in {config_dir}",
+                },
+                indent=2,
+            )
+        )
+        return 2
+    report = verify_config_schedules(paths, min_gap_min=args.min_gap_min)
+    print(json.dumps(report, indent=2))
+    return 0 if report["status"] == "ok" else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fimclient")
     p.add_argument("--config", default="client/config.json", help="Path to client config JSON")
@@ -259,6 +287,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     val = sub.add_parser("validate-config", help="Validate config and print normalized JSON")
     val.set_defaults(func=_cmd_validate_config)
+
+    verify = sub.add_parser(
+        "verify-configs",
+        help="Verify schedules across multiple configs (min-gap enforcement)",
+    )
+    verify.add_argument("--config-dir", default="client", help="Directory containing config files")
+    verify.add_argument(
+        "--pattern",
+        default="FIM_config_[0-9]*.json",
+        help="Glob for config filenames",
+    )
+    verify.add_argument("--min-gap-min", type=int, default=5, help="Minimum gap (minutes)")
+    verify.set_defaults(func=_cmd_verify_configs)
 
     return p
 

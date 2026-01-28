@@ -1,0 +1,21 @@
+[Unit]
+Description=Fim client multi-config scheduler
+After=network.target
+
+[Service]
+Type=simple
+User=fim
+WorkingDirectory=/opt/fim
+Environment=FIM_CONFIG_DIR=/opt/fim/client
+Environment=FIM_CONFIG_PATTERN=FIM_config_[0-9]*.json
+Environment=FIM_STATE_DIR=/var/lib/fim
+Environment=FIM_LOG_DIR=/var/log/fim
+Environment=FIM_POLL_SEC=20
+Environment=FIM_MIN_GAP_MIN=5
+Environment=FIM_MODE=daemon
+ExecStart=/opt/fim/start_client_multi.sh
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
