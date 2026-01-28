@@ -99,11 +99,25 @@ def list_machines() -> dict[str, list[str]]:
     return {"machines": [str(r["machine_name"]) for r in rows if r["machine_name"]]}
 
 
+@app.get("/api/tags")
+def list_tags() -> dict[str, list[str]]:
+    conn = connect()
+    try:
+        init_db(conn)
+        rows = conn.execute(
+            "SELECT DISTINCT tag FROM file_record WHERE tag IS NOT NULL AND tag != '' ORDER BY tag ASC"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"tags": [str(r["tag"]) for r in rows if r["tag"]]}
+
+
 @app.get("/api/query/file")
 def query_file(
     sha256: str = Query(..., min_length=64, max_length=64),
     limit: int | None = 100,
     dedupe: bool = True,
+    tag: str | None = None,
 ) -> dict[str, Any]:
     if len(sha256) != 64:
         raise HTTPException(status_code=400, detail="sha256 must be 64 hex chars")
@@ -111,30 +125,26 @@ def query_file(
     try:
         init_db(conn)
         limit_val = _limit_value(limit, max_limit=20000)
-        if limit_val is None:
-            rows = conn.execute(
-                """
-                SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
-                FROM file_record
-                WHERE sha256 = ?
-                ORDER BY scan_ts DESC, id DESC
-                """,
-                (sha256,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
-                FROM file_record
-                WHERE sha256 = ?
-                ORDER BY scan_ts DESC, id DESC
-                LIMIT ?
-                """,
-                (sha256, limit_val),
-            ).fetchall()
+        where_parts = ["sha256 = ?"]
+        params: list[object] = [sha256]
+        if tag:
+            where_parts.append("tag = ?")
+            params.append(tag)
+        where_clause = " AND ".join(where_parts)
+
+        query = f"""
+            SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, scan_ts, ingested_at, urn
+            FROM file_record
+            WHERE {where_clause}
+            ORDER BY scan_ts DESC, id DESC
+        """
+        if limit_val is not None:
+            query += " LIMIT ?"
+            params.append(limit_val)
+        rows = conn.execute(query, tuple(params)).fetchall()
         sha_count = conn.execute(
-            "SELECT COUNT(*) FROM file_record WHERE sha256 = ?",
-            (sha256,),
+            f"SELECT COUNT(*) FROM file_record WHERE {where_clause}",
+            tuple(params[:len(where_parts)]),
         ).fetchone()[0]
     finally:
         conn.close()
@@ -154,6 +164,7 @@ def query_machine(
     sha256: str | None = None,
     limit: int | None = 0,
     dedupe: bool = True,
+    tag: str | None = None,
 ) -> dict[str, Any]:
     if sha256 is not None and len(sha256) != 64:
         raise HTTPException(status_code=400, detail="sha256 must be 64 hex chars")
@@ -161,56 +172,39 @@ def query_machine(
     try:
         init_db(conn)
         limit_val = _limit_value(limit, max_limit=50000)
-        if sha256 is None:
-            if limit_val is None:
-                rows = conn.execute(
-                    """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
-                    FROM file_record
-                    WHERE machine_name = ?
-                    ORDER BY scan_ts DESC, id DESC
-                    """,
-                    (machine_name,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
-                    FROM file_record
-                    WHERE machine_name = ?
-                    ORDER BY scan_ts DESC, id DESC
-                    LIMIT ?
-                    """,
-                    (machine_name, limit_val),
-                ).fetchall()
-        else:
-            if limit_val is None:
-                rows = conn.execute(
-                    """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
-                    FROM file_record
-                    WHERE machine_name = ? AND sha256 = ?
-                    ORDER BY scan_ts DESC, id DESC
-                    """,
-                    (machine_name, sha256),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
-                    FROM file_record
-                    WHERE machine_name = ? AND sha256 = ?
-                    ORDER BY scan_ts DESC, id DESC
-                    LIMIT ?
-                    """,
-                    (machine_name, sha256, limit_val),
-                ).fetchall()
+
+        # Build WHERE clause dynamically
+        where_parts = ["machine_name = ?"]
+        params: list[object] = [machine_name]
+        if sha256 is not None:
+            where_parts.append("sha256 = ?")
+            params.append(sha256)
+        if tag:
+            where_parts.append("tag = ?")
+            params.append(tag)
+        where_clause = " AND ".join(where_parts)
+
+        query = f"""
+            SELECT machine_name, file_path, file_name, size_bytes, sha256, tag, scan_ts, ingested_at, urn
+            FROM file_record
+            WHERE {where_clause}
+            ORDER BY scan_ts DESC, id DESC
+        """
+        if limit_val is not None:
+            query += " LIMIT ?"
+            params.append(limit_val)
+        rows = conn.execute(query, tuple(params)).fetchall()
 
         records = [dict(r) for r in rows]
         if sha256:
+            count_where = ["machine_name = ?", "sha256 = ?"]
+            count_params: list[object] = [machine_name, sha256]
+            if tag:
+                count_where.append("tag = ?")
+                count_params.append(tag)
             sha_count = conn.execute(
-                "SELECT COUNT(*) FROM file_record WHERE machine_name = ? AND sha256 = ?",
-                (machine_name, sha256),
+                f"SELECT COUNT(*) FROM file_record WHERE {' AND '.join(count_where)}",
+                tuple(count_params),
             ).fetchone()[0]
             for r in records:
                 r["sha256_count"] = sha_count
@@ -218,15 +212,19 @@ def query_machine(
             sha_values = sorted({str(r.get("sha256", "")) for r in records if r.get("sha256")})
             if sha_values:
                 placeholders = ",".join("?" for _ in sha_values)
+                count_where = f"machine_name = ? AND sha256 IN ({placeholders})"
+                count_params_list: list[object] = [machine_name, *sha_values]
+                if tag:
+                    count_where += " AND tag = ?"
+                    count_params_list.append(tag)
                 rows = conn.execute(
                     f"""
                     SELECT sha256, COUNT(*) AS c
                     FROM file_record
-                    WHERE machine_name = ?
-                      AND sha256 IN ({placeholders})
+                    WHERE {count_where}
                     GROUP BY sha256
                     """,
-                    (machine_name, *sha_values),
+                    tuple(count_params_list),
                 ).fetchall()
                 sha_counts = {str(r["sha256"]): int(r["c"]) for r in rows}
                 for r in records:
@@ -248,6 +246,7 @@ def query_name(
     substring: str = Query(..., min_length=1),
     machine_name: str | None = None,
     limit: int | None = 0,
+    tag: str | None = None,
 ) -> dict[str, Any]:
     pattern = f"%{substring}%"
     conn = connect()
@@ -259,27 +258,20 @@ def query_name(
         if machine_name:
             where += " AND machine_name = ?"
             params.append(machine_name)
-        if limit_val is None:
-            rows = conn.execute(
-                f"""
-                SELECT file_name, sha256, scan_ts, ingested_at
-                FROM file_record
-                {where}
-                ORDER BY file_name ASC, scan_ts DESC, id DESC
-                """,
-                tuple(params),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                f"""
-                SELECT file_name, sha256, scan_ts, ingested_at
-                FROM file_record
-                {where}
-                ORDER BY file_name ASC, scan_ts DESC, id DESC
-                LIMIT ?
-                """,
-                tuple(params + [limit_val]),
-            ).fetchall()
+        if tag:
+            where += " AND tag = ?"
+            params.append(tag)
+
+        query = f"""
+            SELECT file_name, tag, sha256, scan_ts, ingested_at
+            FROM file_record
+            {where}
+            ORDER BY file_name ASC, scan_ts DESC, id DESC
+        """
+        if limit_val is not None:
+            query += " LIMIT ?"
+            params.append(limit_val)
+        rows = conn.execute(query, tuple(params)).fetchall()
     finally:
         conn.close()
 
