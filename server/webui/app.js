@@ -124,7 +124,45 @@ function downloadFile(content, filename, type) {
 }
 
 async function copyToClipboard(text) {
-  await navigator.clipboard.writeText(text);
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const ok = document.execCommand("copy");
+  textarea.remove();
+  if (!ok) {
+    throw new Error("clipboard copy blocked by browser");
+  }
+}
+
+function getTableColumns() {
+  if (currentColumns && currentColumns.length) {
+    return currentColumns;
+  }
+  if (currentRecords.length) {
+    return Object.keys(currentRecords[0]).map((key) => ({ key, label: key }));
+  }
+  return [];
+}
+
+function buildCsvPayload() {
+  const cols = getTableColumns();
+  if (!cols.length) {
+    return null;
+  }
+  const header = cols.map((c) => csvEscape(c.label)).join(",");
+  const rows = currentRecords.map((row) =>
+    cols.map((c) => csvEscape(row[c.key] ?? "")).join(",")
+  );
+  rows.push(`# query: ${lastTableQuery}`);
+  return [header, ...rows].join("\n");
 }
 
 function sortRecords(records, key, dir) {
@@ -303,12 +341,11 @@ document.getElementById("btn-table-csv").addEventListener("click", () => {
     setStatus("No table data to export.", true);
     return;
   }
-  const header = currentColumns.map((c) => csvEscape(c.label)).join(",");
-  const rows = currentRecords.map((row) =>
-    currentColumns.map((c) => csvEscape(row[c.key] ?? "")).join(",")
-  );
-  rows.push(`# query: ${lastTableQuery}`);
-  const csv = [header, ...rows].join("\n");
+  const csv = buildCsvPayload();
+  if (!csv) {
+    setStatus("No table columns to export.", true);
+    return;
+  }
   const filename = `fim-table-${formatTimestamp()}.csv`;
   downloadFile(csv, filename, "text/csv");
   setStatus("CSV exported.");
@@ -319,12 +356,11 @@ document.getElementById("btn-table-copy").addEventListener("click", async () => 
     setStatus("No table data to copy.", true);
     return;
   }
-  const header = currentColumns.map((c) => csvEscape(c.label)).join(",");
-  const rows = currentRecords.map((row) =>
-    currentColumns.map((c) => csvEscape(row[c.key] ?? "")).join(",")
-  );
-  rows.push(`# query: ${lastTableQuery}`);
-  const csv = [header, ...rows].join("\n");
+  const csv = buildCsvPayload();
+  if (!csv) {
+    setStatus("No table columns to copy.", true);
+    return;
+  }
   try {
     await copyToClipboard(csv);
     setStatus("Table copied to clipboard.");
@@ -343,7 +379,7 @@ document.getElementById("btn-graph-copy").addEventListener("click", async () => 
     await copyToClipboard(payload);
     setStatus("Graph copied to clipboard.");
   } catch (err) {
-    setStatus(`Copy failed: ${err.message}`, true);
+    setStatus(`Graph copy failed: ${err.message}`, true);
   }
 });
 
