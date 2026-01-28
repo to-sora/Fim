@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Fim Admin UI</title>
-    <link rel="stylesheet" href="/static/style.css?v=4" />
+    <link rel="stylesheet" href="/static/style.css?v=5" />
   </head>
   <body>
     <header class="site-header">
@@ -100,6 +100,9 @@
           <button id="btn-table-copy" type="button">Copy table</button>
           <button id="btn-table-csv" type="button">Export CSV</button>
         </div>
+        <div class="table-scroll-top" id="table-scroll-top">
+          <div class="table-scroll-top-inner" id="table-scroll-top-inner"></div>
+        </div>
         <div class="table-wrap">
           <table id="result-table"></table>
         </div>
@@ -117,6 +120,6 @@
 
     <datalist id="machine-list"></datalist>
 
-    <script src="/static/app.js?v=4"></script>
+    <script src="/static/app.js?v=5"></script>
   </body>
 </html>

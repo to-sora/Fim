@@ -2,6 +2,8 @@ const statusEl = document.getElementById("status");
 const tableEl = document.getElementById("result-table");
 const metaEl = document.getElementById("result-meta");
 const graphEl = document.getElementById("graph-output");
+const topScroll = document.getElementById("table-scroll-top");
+const topScrollInner = document.getElementById("table-scroll-top-inner");
 
 const columnsFull = [
   { key: "machine_name", label: "Machine" },
@@ -17,9 +19,9 @@ const columnsFull = [
 
 const columnsName = [
   { key: "file_name", label: "File" },
-  { key: "sha256", label: "SHA256" },
   { key: "scan_ts", label: "Scan TS" },
   { key: "ingested_at", label: "Ingested At" },
+  { key: "sha256", label: "SHA256" },
 ];
 
 let currentRecords = [];
@@ -93,6 +95,7 @@ function renderTable(records, columns) {
 
   const sortLabel = sortState.key ? ` • sorted by ${sortState.key}` : "";
   metaEl.textContent = `${currentRecords.length} records${sortLabel}`;
+  syncTableScroll();
 }
 
 function csvEscape(value) {
@@ -191,6 +194,14 @@ function sortRecords(records, key, dir) {
   });
 }
 
+function syncTableScroll() {
+  if (!topScroll || !topScrollInner) {
+    return;
+  }
+  const tableWidth = tableEl.scrollWidth || 0;
+  topScrollInner.style.width = `${tableWidth}px`;
+}
+
 async function fetchJson(url) {
   const res = await fetch(url);
   if (!res.ok) {
@@ -221,6 +232,24 @@ function getValue(id) {
 
 function getChecked(id) {
   return document.getElementById(id).checked;
+}
+
+if (topScroll) {
+  topScroll.addEventListener("scroll", () => {
+    const wrap = tableEl.parentElement;
+    if (wrap) {
+      wrap.scrollLeft = topScroll.scrollLeft;
+    }
+  });
+}
+
+const tableWrap = tableEl.parentElement;
+if (tableWrap) {
+  tableWrap.addEventListener("scroll", () => {
+    if (topScroll) {
+      topScroll.scrollLeft = tableWrap.scrollLeft;
+    }
+  });
 }
 
 document.getElementById("btn-machine").addEventListener("click", async () => {
