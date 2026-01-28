@@ -138,6 +138,7 @@ Systemd examples:
 
 - Server unit: `scripts/fimserver.service`
 - Client unit: `scripts/fimclient.service`
+- Client multi-config unit: `scripts/fimclient-multi.service`
 - Web UI unit: `scripts/fimwebui.service`
 
 Copy the unit files to `/etc/systemd/system/`, adjust paths/users, then run:
@@ -146,6 +147,7 @@ Copy the unit files to `/etc/systemd/system/`, adjust paths/users, then run:
 sudo systemctl daemon-reload
 sudo systemctl enable --now fimserver.service
 sudo systemctl enable --now fimclient.service
+sudo systemctl enable --now fimclient-multi.service
 sudo systemctl enable --now fimwebui.service
 ```
 
@@ -160,6 +162,33 @@ Shortcut script (`daemon` is default when no args are provided):
 ```bash
 ./start_client.sh
 ```
+
+### Multi-config client (tags per config)
+
+If you want separate schedules/tags without changing the server, create multiple configs
+named `FIM_config_[0-9]*.json` in the config directory (default `client/`). Each config
+runs in its own process with separate state/log/lock files.
+
+Validate schedule spacing (min 5 minutes between different configs):
+
+```bash
+python -m client.cli verify-configs --config-dir client --pattern "FIM_config_[0-9]*.json"
+```
+
+Run all configs under one supervisor:
+
+```bash
+./start_client_multi.sh
+```
+
+Environment knobs (for `start_client_multi.sh` / `fimclient-multi.service`):
+
+- `FIM_CONFIG_DIR` (default `client/`)
+- `FIM_CONFIG_PATTERN` (default `FIM_config_[0-9]*.json`)
+- `FIM_STATE_DIR` (default `data/state/`)
+- `FIM_LOG_DIR` (default `log/`)
+- `FIM_POLL_SEC` (default `20`)
+- `FIM_MIN_GAP_MIN` (default `5`)
 
 ### Web UI (no auth)
 

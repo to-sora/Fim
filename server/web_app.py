@@ -114,7 +114,7 @@ def query_file(
         if limit_val is None:
             rows = conn.execute(
                 """
-                SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
+                SELECT machine_name, tag, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
                 FROM file_record
                 WHERE sha256 = ?
                 ORDER BY scan_ts DESC, id DESC
@@ -124,7 +124,7 @@ def query_file(
         else:
             rows = conn.execute(
                 """
-                SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
+                SELECT machine_name, tag, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
                 FROM file_record
                 WHERE sha256 = ?
                 ORDER BY scan_ts DESC, id DESC
@@ -165,7 +165,7 @@ def query_machine(
             if limit_val is None:
                 rows = conn.execute(
                     """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
+                    SELECT machine_name, tag, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
                     FROM file_record
                     WHERE machine_name = ?
                     ORDER BY scan_ts DESC, id DESC
@@ -175,7 +175,7 @@ def query_machine(
             else:
                 rows = conn.execute(
                     """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
+                    SELECT machine_name, tag, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
                     FROM file_record
                     WHERE machine_name = ?
                     ORDER BY scan_ts DESC, id DESC
@@ -187,7 +187,7 @@ def query_machine(
             if limit_val is None:
                 rows = conn.execute(
                     """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
+                    SELECT machine_name, tag, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
                     FROM file_record
                     WHERE machine_name = ? AND sha256 = ?
                     ORDER BY scan_ts DESC, id DESC
@@ -197,7 +197,7 @@ def query_machine(
             else:
                 rows = conn.execute(
                     """
-                    SELECT machine_name, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
+                    SELECT machine_name, tag, file_path, file_name, size_bytes, sha256, scan_ts, ingested_at, urn
                     FROM file_record
                     WHERE machine_name = ? AND sha256 = ?
                     ORDER BY scan_ts DESC, id DESC
@@ -262,7 +262,7 @@ def query_name(
         if limit_val is None:
             rows = conn.execute(
                 f"""
-                SELECT file_name, sha256, scan_ts, ingested_at
+                SELECT file_name, tag, sha256, scan_ts, ingested_at
                 FROM file_record
                 {where}
                 ORDER BY file_name ASC, scan_ts DESC, id DESC
@@ -272,7 +272,7 @@ def query_name(
         else:
             rows = conn.execute(
                 f"""
-                SELECT file_name, sha256, scan_ts, ingested_at
+                SELECT file_name, tag, sha256, scan_ts, ingested_at
                 FROM file_record
                 {where}
                 ORDER BY file_name ASC, scan_ts DESC, id DESC

@@ -167,6 +167,7 @@ def _cmd_query_file(args: argparse.Namespace) -> int:
             records = _dedupe_for_table(records, key_fields=("file_path", "file_name"))
             cols = [
                 ("machine_name", "MACHINE"),
+                ("tag", "TAG"),
                 ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
@@ -277,6 +278,7 @@ def _cmd_query_machine(args: argparse.Namespace) -> int:
                 r["size_display"] = r.get("size_human", r.get("size_bytes", ""))
             cols = [
                 ("machine_name", "MACHINE"),
+                ("tag", "TAG"),
                 ("file_path", "PATH"),
                 ("file_name", "FILE"),
                 ("size_display", "SIZE"),
@@ -310,7 +312,7 @@ def _cmd_query_name(args: argparse.Namespace) -> int:
         if limit is None:
             rows = conn.execute(
                 f"""
-                SELECT file_name, sha256, scan_ts, ingested_at
+                SELECT file_name, tag, sha256, scan_ts, ingested_at
                 FROM file_record
                 {where_clause}
                 ORDER BY file_name ASC, scan_ts DESC, id DESC
@@ -320,7 +322,7 @@ def _cmd_query_name(args: argparse.Namespace) -> int:
         else:
             rows = conn.execute(
                 f"""
-                SELECT file_name, sha256, scan_ts, ingested_at
+                SELECT file_name, tag, sha256, scan_ts, ingested_at
                 FROM file_record
                 {where_clause}
                 ORDER BY file_name ASC, scan_ts DESC, id DESC
@@ -333,6 +335,7 @@ def _cmd_query_name(args: argparse.Namespace) -> int:
         if getattr(args, "table", False):
             cols = [
                 ("file_name", "FILE"),
+                ("tag", "TAG"),
                 ("scan_ts", "SCAN_TS"),
                 ("ingested_at", "INGESTED_AT"),
                 ("sha256", "SHA256"),

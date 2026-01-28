@@ -7,6 +7,7 @@ const topScrollInner = document.getElementById("table-scroll-top-inner");
 
 const columnsFull = [
   { key: "machine_name", label: "Machine" },
+  { key: "tag", label: "Tag" },
   { key: "file_path", label: "Path" },
   { key: "file_name", label: "File" },
   { key: "size_human", label: "Size" },
@@ -19,6 +20,7 @@ const columnsFull = [
 
 const columnsName = [
   { key: "file_name", label: "File" },
+  { key: "tag", label: "Tag" },
   { key: "scan_ts", label: "Scan TS" },
   { key: "ingested_at", label: "Ingested At" },
   { key: "sha256", label: "SHA256" },
