@@ -290,12 +290,12 @@ def query_name(
     return payload
 
 
-@app.get("/api/graph/sha256")
+@app.get("/api/graph/sha256", response_model=None)
 def graph_sha256(
     sha256: str = Query(..., min_length=64, max_length=64),
     fmt: str = Query("ascii", pattern="^(ascii|dot|mermaid|json)$"),
     limit: int | None = 20000,
-) -> PlainTextResponse | dict[str, Any]:
+) -> Any:
     conn = connect()
     try:
         init_db(conn)
